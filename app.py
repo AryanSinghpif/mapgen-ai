@@ -429,10 +429,10 @@ if st.session_state.step == 1:
     user_prompt = st.text_area(
         label="Describe your data and goal",
         placeholder=(
-            "e.g. "I have district-level literacy rates for Rajasthan and want to show "
-            "which districts lag behind the state average."\n\n"
-            "or: "Monthly NREGA wage disbursement across all India districts, 2023-24 — "
-            "highlight the bottom quartile.""
+            "e.g. I have district-level literacy rates for Rajasthan and want to show "
+            "which districts lag behind the state average.\n\n"
+            "or: Monthly NREGA wage disbursement across all India districts, 2023-24 -- "
+            "highlight the bottom quartile."
         ),
         height=110,
         value=st.session_state.user_prompt,
