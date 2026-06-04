@@ -55,6 +55,12 @@ from map_engine import (
     render_static,
 )
 from groq_matcher import apply_groq_results, batch_resolve
+from data_analyzer import (
+    clean_dataframe,
+    profile_data,
+    pivot_long_to_wide,
+    DataProfile,
+)
 
 
 # ── Page config ───────────────────────────────────────────────────────────────
@@ -318,6 +324,7 @@ def _init_state():
         "fig":            None,
         "folium_map":     None,
         "user_prompt":    "",
+        "data_profile":   None,   # DataProfile from data_analyzer
         "data_level":     None,   # "district" | "state" — auto-detected at step 3
         "title":          "",
         "source":         "",
@@ -448,21 +455,96 @@ if st.session_state.step == 1:
     st.divider()
     st.caption("Upload your data file — CSV or Excel with a district name column and at least one numeric column.")
 
-    uploaded = st.file_uploader("Data file", type=["csv", "xlsx"], label_visibility="collapsed")
+    uploaded = st.file_uploader("Data file", type=["csv", "xlsx", "xls"], label_visibility="collapsed")
 
     if uploaded:
         try:
+            # ── Load raw file ────────────────────────────────────────────
             if uploaded.name.endswith(".csv"):
-                df = pd.read_csv(uploaded)
+                raw_df = pd.read_csv(uploaded)
             else:
-                df = pd.read_excel(uploaded, engine="openpyxl")
+                # Excel: try each sheet, pick the most data-rich one
+                xl = pd.ExcelFile(uploaded, engine="openpyxl")
+                best_sheet, best_df = None, None
+                for sheet in xl.sheet_names:
+                    try:
+                        s_df = xl.parse(sheet)
+                        if best_df is None or s_df.size > best_df.size:
+                            best_df, best_sheet = s_df, sheet
+                    except Exception:
+                        continue
+                if best_df is None:
+                    st.error("Could not parse any sheet in the Excel file.")
+                    st.stop()
+                raw_df = best_df
+                if len(xl.sheet_names) > 1:
+                    st.caption(f"Excel: using sheet **{best_sheet}** "
+                               f"({len(xl.sheet_names)} sheets found — picked most data-rich).")
 
-            st.success(f"Loaded **{len(df):,} rows** × **{len(df.columns)} columns**")
-            st.dataframe(df.head(8), use_container_width=True)
+            # ── Clean ────────────────────────────────────────────────────
+            with st.spinner("Cleaning and analysing data…"):
+                clean_result = clean_dataframe(raw_df)
+                df           = clean_result.df
+                profile      = profile_data(df)
 
-            st.session_state.df = df
+            # ── Profile banner ───────────────────────────────────────────
+            level_label = {"district": "District-level", "state": "State-level",
+                           "unknown": "Unknown level"}.get(profile.level, profile.level)
+            fmt_label   = {"wide": "Wide format (one row per place)",
+                           "long": "Long / tidy format (multiple rows per place)"
+                           }.get(profile.fmt, profile.fmt)
 
-            # Auto-load bundled shapefile silently; skip step 2 entirely
+            col_a, col_b, col_c = st.columns(3)
+            col_a.metric("Rows", f"{profile.n_rows:,}")
+            col_b.metric("Format", fmt_label.split("(")[0].strip())
+            col_c.metric("Level", level_label.split("-")[0].strip())
+
+            # Issues
+            for issue in profile.issues:
+                st.error(issue)
+            for note in profile.notes:
+                st.info(note)
+            if clean_result.changes:
+                with st.expander("Data cleaning applied"):
+                    for c in clean_result.changes:
+                        st.markdown(f"- {c}")
+
+            # ── Long format: show pivot UI ───────────────────────────────
+            if profile.fmt == "long" and profile.variable_col and profile.long_value_col:
+                st.subheader("Long format detected — pivot settings")
+                obj_cols = list(df.select_dtypes("object").columns)
+                num_cols = list(df.select_dtypes("number").columns)
+
+                col_geo = st.selectbox("Geography column (district/state name)",
+                                       options=obj_cols,
+                                       index=obj_cols.index(profile.geo_col)
+                                             if profile.geo_col in obj_cols else 0)
+                col_var = st.selectbox("Variable column (indicator names)",
+                                       options=obj_cols,
+                                       index=obj_cols.index(profile.variable_col)
+                                             if profile.variable_col in obj_cols else 0)
+                col_val = st.selectbox("Value column (numeric values)",
+                                       options=num_cols,
+                                       index=num_cols.index(profile.long_value_col)
+                                             if profile.long_value_col in num_cols else 0)
+
+                try:
+                    df = pivot_long_to_wide(df, col_geo, col_var, col_val)
+                    profile = profile_data(df)   # re-profile the pivoted wide df
+                    st.success(f"Pivoted to wide format: {len(df):,} rows × {len(df.columns)} columns.")
+                    st.dataframe(df.head(6), use_container_width=True)
+                except Exception as _pe:
+                    st.error(f"Could not pivot: {_pe}")
+                    st.stop()
+            else:
+                st.dataframe(df.head(8), use_container_width=True)
+
+            # ── Save to session ──────────────────────────────────────────
+            st.session_state.df           = df
+            st.session_state.data_profile = profile
+            st.session_state.data_level   = profile.level if profile.level != "unknown" else None
+
+            # Auto-load bundled shapefile silently
             BUNDLED_SHP = Path(__file__).parent / "shapefiles" / "india_districts.zip"
             if BUNDLED_SHP.exists() and st.session_state.gdf is None:
                 try:
@@ -474,7 +556,7 @@ if st.session_state.step == 1:
                         st.session_state.gdf = gpd.read_file(io.BytesIO(st.session_state.gdf_bytes))
                         st.session_state.boundary_year = "2024"
                 except Exception as _e:
-                    st.warning(f"Could not auto-load bundled shapefile: {_e}. Upload one manually in the next step.")
+                    st.warning(f"Could not auto-load bundled shapefile: {_e}.")
 
             next_step = 3 if st.session_state.gdf is not None else 2
             if st.button("Continue →", type="primary"):
@@ -483,13 +565,10 @@ if st.session_state.step == 1:
 
         except Exception as e:
             st.error(f"Could not read file: {e}")
+            st.exception(e)
 
     st.divider()
-    st.info(
-        "Don't have a file yet? "
-        "[Download the sample Karnataka CSV](sample_data/karnataka_sample.csv) "
-        "to try the tool."
-    )
+    st.caption("Accepts CSV, Excel (.xlsx/.xls) — wide or long format, district or state level.")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -627,31 +706,38 @@ elif st.session_state.step == 3:
     df  = st.session_state.df
     gdf = st.session_state.gdf
 
-    # ── District name column in data ──────────────────────────────────────
-    obj_cols     = list(df.select_dtypes("object").columns)
-    num_cols     = list(df.select_dtypes("number").columns)
+    # ── Use profile from step 1 to pre-fill ──────────────────────────────
+    profile: DataProfile = st.session_state.data_profile
+
+    obj_cols = list(df.select_dtypes("object").columns)
+    num_cols = list(df.select_dtypes("number").columns)
 
     if not obj_cols:
-        st.error("No text columns found in your data file. Cannot detect district names.")
+        st.error("No text columns found. Cannot detect district/state names.")
         st.stop()
     if not num_cols:
-        st.error("No numeric columns found in your data file. Nothing to map.")
+        st.error("No numeric columns found. Nothing to map.")
         st.stop()
 
-    st.subheader("Your data file")
+    # Profile summary banner
+    if profile:
+        level_badge = "State-level data" if profile.level == "state" else "District-level data"
+        st.info(f"**{level_badge}** detected. Geo column: `{profile.geo_col}` — "
+                f"{len(profile.value_cols)} numeric column(s) available.")
+
+    st.subheader("Geography column")
+    geo_default = (obj_cols.index(profile.geo_col)
+                   if profile and profile.geo_col in obj_cols else 0)
     data_name_col = st.selectbox(
-        "Which column contains district names?",
+        "Column containing district or state names",
         options=obj_cols,
-        index=0,
+        index=geo_default,
     )
 
-    # Surface ALL numeric columns — never guess
-    st.markdown("**Which column should be mapped?**")
-    st.caption(
-        "If you see multiple candidates (e.g. pop_2011, pop_2021), "
-        "both are shown — pick the one you need."
-    )
-    value_col = st.selectbox("Value column to map", options=num_cols)
+    st.subheader("Value to map")
+    val_default = (num_cols.index(profile.value_cols[0])
+                   if profile and profile.value_cols and profile.value_cols[0] in num_cols else 0)
+    value_col = st.selectbox("Numeric column to map", options=num_cols, index=val_default)
 
     # ── District name column in shapefile ─────────────────────────────────
     st.subheader("Shapefile")
@@ -695,7 +781,8 @@ elif st.session_state.step == 3:
             data_names = df[data_name_col].astype(str).tolist()
 
             # ── Detect district vs state level ────────────────────────────
-            level = detect_data_level(data_names)
+            # Use profile's level if already detected, else re-detect from actual geo col
+            level = st.session_state.data_level or detect_data_level(data_names)
             st.session_state.data_level = level
 
             if level == "state":
