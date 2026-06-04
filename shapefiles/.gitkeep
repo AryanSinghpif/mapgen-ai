@@ -1,0 +1,10 @@
+# Drop your district shapefile (.shp, .shx, .dbf, .prj) or GeoJSON here.
+#
+# Recommended sources:
+#   - Datameet India Maps: https://github.com/datameet/maps
+#   - Survey of India / NCOG: https://onlinemaps.surveyofindia.gov.in
+#   - GADM (gadm.org) — level-2 gives districts
+#
+# IMPORTANT: Note the boundary vintage year of your shapefile.
+# Post-2011 district splits (e.g. Telangana, many UP/MP/Bihar splits)
+# will not appear in a 2011-boundary shapefile.

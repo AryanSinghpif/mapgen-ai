@@ -1,0 +1,749 @@
+"""
+app.py — Streamlit UI for District Map Generator
+=================================================
+Multi-step interface that mirrors the CrewAI Flow in flows.py but with
+interactive widgets instead of CLI prompts.
+
+Run with:
+    streamlit run app.py
+
+Steps:
+  1  Upload data file (CSV / XLSX)
+  2  Upload shapefile (or GeoJSON)
+  3  Select columns (district name + value to map)
+  4  District matching  — auto-runs tiers 1–4, then optional Groq
+  5  Human-confirm gate — review low-confidence + unmatched matches
+  6  Map configuration  — title, source, color ramp, classification
+  7  Preview + download  — PNG, JPG, SVG, HTML, .py script, GeoJSON
+"""
+
+from __future__ import annotations
+
+import io
+import os
+from pathlib import Path
+
+import geopandas as gpd
+import matplotlib.pyplot as plt
+import pandas as pd
+import streamlit as st
+
+from map_engine import (
+    CLASSIFICATION_SCHEMES,
+    COLOR_RAMPS,
+    HIGH_CONF_THRESHOLD,
+    MatchResult,
+    apply_manual_corrections,
+    detect_district_column,
+    fig_to_bytes,
+    generate_script,
+    geojson_bytes,
+    join_to_geo,
+    load_shapefile,
+    map_to_html_bytes,
+    match_districts,
+    render_interactive,
+    render_static,
+)
+from groq_matcher import apply_groq_results, batch_resolve
+
+
+# ── Page config ───────────────────────────────────────────────────────────────
+
+st.set_page_config(
+    page_title="District Map Generator",
+    page_icon="🗺️",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+
+# ── Session state helpers ─────────────────────────────────────────────────────
+
+def _init_state():
+    defaults = {
+        "step":           1,
+        "df":             None,
+        "gdf":            None,
+        "data_name_col":  None,
+        "shp_name_col":   None,
+        "value_col":      None,
+        "match_result":   None,
+        "corrections":    {},      # data_name → shp_name or None
+        "merged_gdf":     None,
+        "fig":            None,
+        "folium_map":     None,
+        "title":          "",
+        "source":         "",
+        "boundary_year":  "",
+        "scheme":         "quantiles",
+        "cmap_name":      "Blues",
+        "n_classes":      5,
+    }
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
+
+
+_init_state()
+
+
+# ── Sidebar: progress tracker ─────────────────────────────────────────────────
+
+STEPS = [
+    "1  Upload data",
+    "2  Upload shapefile",
+    "3  Select columns",
+    "4  Match districts",
+    "5  Confirm matches",
+    "6  Configure map",
+    "7  Preview & export",
+]
+
+with st.sidebar:
+    st.title("🗺️ District Map Generator")
+    st.caption("Pahle India Foundation — Research Tools")
+    st.divider()
+
+    for i, label in enumerate(STEPS, start=1):
+        cur = st.session_state.step
+        if i < cur:
+            st.markdown(f"✅ {label}")
+        elif i == cur:
+            st.markdown(f"**▶ {label}**")
+        else:
+            st.markdown(f"○ {label}")
+
+    st.divider()
+    _groq_default = os.environ.get("GROQ_API_KEY", "") or st.secrets.get("GROQ_API_KEY", "")
+    groq_key = st.text_input(
+        "Groq API key (optional)",
+        type="password",
+        help="Used only for district names that survive all rule-based tiers. "
+             "Free tier at console.groq.com. Leave blank to skip.",
+        value=_groq_default,
+    )
+
+    st.caption(
+        "Groq is called **once per upload**, batching all unresolved names. "
+        "Leave blank to rely on rules + fuzzy matching alone."
+    )
+
+    if st.button("↺ Start over", use_container_width=True):
+        for k in list(st.session_state.keys()):
+            del st.session_state[k]
+        st.rerun()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 1 — Upload data file
+# ═══════════════════════════════════════════════════════════════════════════════
+
+if st.session_state.step == 1:
+    st.header("Step 1: Upload your data file")
+    st.caption("Accepted formats: CSV (.csv) or Excel (.xlsx)")
+
+    uploaded = st.file_uploader("Data file", type=["csv", "xlsx"])
+
+    if uploaded:
+        try:
+            if uploaded.name.endswith(".csv"):
+                df = pd.read_csv(uploaded)
+            else:
+                df = pd.read_excel(uploaded, engine="openpyxl")
+
+            st.success(f"Loaded **{len(df):,} rows** × **{len(df.columns)} columns**")
+            st.dataframe(df.head(8), use_container_width=True)
+
+            st.session_state.df = df
+            if st.button("Continue →", type="primary"):
+                st.session_state.step = 2
+                st.rerun()
+
+        except Exception as e:
+            st.error(f"Could not read file: {e}")
+
+    st.divider()
+    st.info(
+        "📂 Don't have a file yet? "
+        "[Download the sample Karnataka CSV](sample_data/karnataka_sample.csv) "
+        "to try the tool."
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 2 — Upload shapefile
+# ═══════════════════════════════════════════════════════════════════════════════
+
+elif st.session_state.step == 2:
+    st.header("Step 2: Upload your district shapefile")
+    st.caption(
+        "Supported: GeoJSON (.geojson) or zipped shapefile (.zip containing "
+        ".shp/.shx/.dbf/.prj). Must cover the same state as your data."
+    )
+
+    col_info, col_upload = st.columns([1, 1])
+    with col_info:
+        st.info(
+            "**Where to get shapefiles:**\n"
+            "- [Datameet India Maps](https://github.com/datameet/maps) — open, state-level\n"
+            "- [GADM](https://gadm.org) — global, level-2 = districts\n"
+            "- [MapCruzin](https://mapcruzin.com)\n\n"
+            "⚠️ Note the **boundary vintage year** — it determines which districts exist "
+            "in the file. Post-2011 splits won't appear in a 2011-boundary shapefile."
+        )
+
+    with col_upload:
+        uploaded_shp = st.file_uploader(
+            "Shapefile or GeoJSON",
+            type=["geojson", "json", "zip"],
+        )
+        boundary_year = st.text_input(
+            "Boundary vintage year",
+            placeholder="e.g. 2011 or 2023",
+            help="The year your shapefile's boundaries represent. Used in the map footnote.",
+        )
+
+    if uploaded_shp:
+        try:
+            import tempfile, zipfile
+
+            suffix = Path(uploaded_shp.name).suffix.lower()
+            with tempfile.TemporaryDirectory() as tmp:
+                if suffix == ".zip":
+                    zip_path = Path(tmp) / "shp.zip"
+                    zip_path.write_bytes(uploaded_shp.read())
+                    with zipfile.ZipFile(zip_path) as z:
+                        z.extractall(tmp)
+                    shp_files = list(Path(tmp).glob("**/*.shp"))
+                    if not shp_files:
+                        geojson_files = list(Path(tmp).glob("**/*.geojson"))
+                        load_path = geojson_files[0] if geojson_files else None
+                    else:
+                        load_path = shp_files[0]
+                    if not load_path:
+                        st.error("No .shp or .geojson found inside the zip.")
+                        st.stop()
+                else:
+                    load_path = Path(tmp) / uploaded_shp.name
+                    load_path.write_bytes(uploaded_shp.read())
+
+                gdf = load_shapefile(load_path)
+
+                # Serialize to GeoJSON bytes BEFORE temp dir is deleted
+                _buf = io.BytesIO()
+                gdf.to_file(_buf, driver="GeoJSON")
+                st.session_state.gdf_bytes = _buf.getvalue()
+
+            # Deserialize from bytes so the GDF is independent of temp dir
+            gdf = gpd.read_file(io.BytesIO(st.session_state.gdf_bytes))
+
+            st.success(
+                f"Loaded **{len(gdf):,} districts** | "
+                f"CRS: `{gdf.crs.to_string()}` | "
+                f"Columns: {list(gdf.columns)}"
+            )
+            st.dataframe(
+                gdf.drop(columns="geometry").head(5),
+                use_container_width=True,
+            )
+
+            st.session_state.gdf = gdf
+            st.session_state.boundary_year = boundary_year
+
+            if st.button("Continue →", type="primary"):
+                st.session_state.step = 3
+                st.rerun()
+
+        except Exception as e:
+            st.error(f"Could not read shapefile: {e}")
+
+    if st.button("← Back"):
+        st.session_state.step = 1
+        st.rerun()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 3 — Select columns
+# ═══════════════════════════════════════════════════════════════════════════════
+
+elif st.session_state.step == 3:
+    st.header("Step 3: Select columns to map")
+
+    df  = st.session_state.df
+    gdf = st.session_state.gdf
+
+    # ── District name column in data ──────────────────────────────────────
+    obj_cols     = list(df.select_dtypes("object").columns)
+    num_cols     = list(df.select_dtypes("number").columns)
+
+    if not obj_cols:
+        st.error("No text columns found in your data file. Cannot detect district names.")
+        st.stop()
+    if not num_cols:
+        st.error("No numeric columns found in your data file. Nothing to map.")
+        st.stop()
+
+    st.subheader("Your data file")
+    data_name_col = st.selectbox(
+        "Which column contains district names?",
+        options=obj_cols,
+        index=0,
+    )
+
+    # Surface ALL numeric columns — never guess
+    st.markdown("**Which column should be mapped?**")
+    st.caption(
+        "If you see multiple candidates (e.g. pop_2011, pop_2021), "
+        "both are shown — pick the one you need."
+    )
+    value_col = st.selectbox("Value column to map", options=num_cols)
+
+    # ── District name column in shapefile ─────────────────────────────────
+    st.subheader("Shapefile")
+    try:
+        auto_shp_col = detect_district_column(gdf)
+    except Exception:
+        auto_shp_col = None
+
+    shp_str_cols = [c for c in gdf.columns if c != "geometry"]
+    default_idx  = shp_str_cols.index(auto_shp_col) if auto_shp_col in shp_str_cols else 0
+
+    shp_name_col = st.selectbox(
+        "Which shapefile column contains district names?",
+        options=shp_str_cols,
+        index=default_idx,
+        help=f"Auto-detected: '{auto_shp_col}'",
+    )
+
+    st.divider()
+    col_l, col_r = st.columns([1, 1])
+    with col_l:
+        st.markdown("**Sample district names in your data:**")
+        st.write(df[data_name_col].dropna().unique()[:12].tolist())
+    with col_r:
+        st.markdown("**Sample district names in shapefile:**")
+        st.write(gdf[shp_name_col].dropna().unique()[:12].tolist())
+
+    st.divider()
+    col_b, col_c = st.columns([1, 5])
+    with col_b:
+        if st.button("← Back"):
+            st.session_state.step = 2
+            st.rerun()
+    with col_c:
+        if st.button("Run district matching →", type="primary"):
+            st.session_state.data_name_col = data_name_col
+            st.session_state.shp_name_col  = shp_name_col
+            st.session_state.value_col     = value_col
+            st.session_state.step = 4
+            st.rerun()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 4 — Match districts
+# ═══════════════════════════════════════════════════════════════════════════════
+
+elif st.session_state.step == 4:
+    st.header("Step 4: District name matching")
+
+    df            = st.session_state.df
+    gdf           = st.session_state.gdf
+    data_name_col = st.session_state.data_name_col
+    shp_name_col  = st.session_state.shp_name_col
+    value_col     = st.session_state.value_col
+
+    data_names = df[data_name_col].astype(str).tolist()
+    shp_names  = gdf[shp_name_col].astype(str).tolist()
+
+    with st.spinner("Running tiered matching (rules + fuzzy)…"):
+        result = match_districts(data_names, shp_names)
+
+    # ── Groq for leftovers ────────────────────────────────────────────────
+    needs_groq = result.unmatched + [m.data_name for m in result.low_confidence]
+
+    if needs_groq and groq_key:
+        with st.spinner(f"Sending {len(needs_groq)} unresolved name(s) to Groq (one call)…"):
+            groq_matches = batch_resolve(needs_groq, shp_names, api_key=groq_key)
+            apply_groq_results(result, groq_matches, HIGH_CONF_THRESHOLD)
+
+    st.session_state.match_result = result
+
+    # ── Summary metrics ───────────────────────────────────────────────────
+    total = len(data_names)
+    mc1, mc2, mc3 = st.columns(3)
+    mc1.metric("Auto-matched", f"{len(result.high_confidence)}/{total}",
+               help="Accepted without human review")
+    mc2.metric("Needs review", len(result.low_confidence),
+               help="Low-confidence or Groq suggestions requiring confirmation")
+    mc3.metric("Unmatched", len(result.unmatched),
+               help="No candidate found — you can assign manually")
+
+    st.divider()
+
+    # ── High-confidence table ─────────────────────────────────────────────
+    with st.expander(f"✅ Auto-matched ({len(result.high_confidence)})", expanded=False):
+        if result.high_confidence:
+            rows = [{"Data name": m.data_name, "Shapefile name": m.shp_name,
+                     "Tier": m.tier, "Confidence": f"{m.confidence:.0%}",
+                     "Note": m.note}
+                    for m in result.high_confidence]
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        else:
+            st.info("No auto-matched districts.")
+
+    col_b, col_c = st.columns([1, 5])
+    with col_b:
+        if st.button("← Back"):
+            st.session_state.step = 3
+            st.rerun()
+    with col_c:
+        lbl = "Review & confirm →" if (result.low_confidence or result.unmatched) \
+              else "All matched! Continue →"
+        if st.button(lbl, type="primary"):
+            st.session_state.step = 5
+            st.rerun()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 5 — Human-confirm gate
+# ═══════════════════════════════════════════════════════════════════════════════
+
+elif st.session_state.step == 5:
+    st.header("Step 5: Confirm district matches")
+
+    result        = st.session_state.match_result
+    gdf           = st.session_state.gdf
+    shp_name_col  = st.session_state.shp_name_col
+    shp_names     = sorted(gdf[shp_name_col].dropna().astype(str).unique().tolist())
+
+    if not result.low_confidence and not result.unmatched:
+        st.success("All districts matched with high confidence — no review needed!")
+        if st.button("Continue to map config →", type="primary"):
+            st.session_state.step = 6
+            st.rerun()
+        st.stop()
+
+    corrections: dict[str, str | None] = {}
+
+    # ── Low-confidence matches ────────────────────────────────────────────
+    if result.low_confidence:
+        st.subheader(f"🔶 Low-confidence matches ({len(result.low_confidence)})")
+        st.caption(
+            "These were matched by fuzzy rules or LLM suggestion. "
+            "Accept each suggestion or pick the correct shapefile district."
+        )
+
+        for i, m in enumerate(result.low_confidence):
+            with st.container():
+                c1, c2, c3 = st.columns([2, 2, 1])
+                with c1:
+                    st.markdown(f"**Data name:** `{m.data_name}`")
+                    st.caption(f"Tier: {m.tier} | Confidence: {m.confidence:.0%} | {m.note}")
+                with c2:
+                    choice = st.selectbox(
+                        "Map to shapefile district",
+                        options=["(skip — omit from map)"] + shp_names,
+                        index=shp_names.index(m.shp_name) + 1
+                              if m.shp_name in shp_names else 0,
+                        key=f"low_conf_{i}",
+                        label_visibility="collapsed",
+                    )
+                with c3:
+                    badge_color = "🟡" if m.confidence < 0.8 else "🟠"
+                    st.markdown(f"{badge_color} {m.confidence:.0%}")
+
+                corrections[m.data_name] = None if choice.startswith("(skip") else choice
+                st.divider()
+
+    # ── Unmatched ─────────────────────────────────────────────────────────
+    if result.unmatched:
+        st.subheader(f"🔴 Unmatched ({len(result.unmatched)})")
+        st.caption(
+            "No match was found by any rule. Assign manually or skip. "
+            "Skipped districts will render as 'No data' (gray hatching)."
+        )
+
+        for j, name in enumerate(result.unmatched):
+            c1, c2 = st.columns([2, 3])
+            with c1:
+                st.markdown(f"**`{name}`**")
+            with c2:
+                choice = st.selectbox(
+                    "Assign to",
+                    options=["(skip — omit from map)"] + shp_names,
+                    index=0,
+                    key=f"unmatched_{j}",
+                    label_visibility="collapsed",
+                )
+            corrections[name] = None if choice.startswith("(skip") else choice
+            st.divider()
+
+    col_b, col_c = st.columns([1, 5])
+    with col_b:
+        if st.button("← Back"):
+            st.session_state.step = 4
+            st.rerun()
+    with col_c:
+        if st.button("Apply corrections & configure map →", type="primary"):
+            updated_result = apply_manual_corrections(result, corrections)
+            st.session_state.match_result = updated_result
+            st.session_state.corrections  = corrections
+            st.session_state.step = 6
+            st.rerun()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 6 — Map configuration
+# ═══════════════════════════════════════════════════════════════════════════════
+
+elif st.session_state.step == 6:
+    st.header("Step 6: Configure your map")
+
+    c_left, c_right = st.columns([1, 1])
+
+    with c_left:
+        st.subheader("Labels & attribution")
+        title = st.text_input(
+            "Map title",
+            value=st.session_state.title or
+                  f"{st.session_state.value_col.replace('_', ' ').title()} by District",
+        )
+        source = st.text_input(
+            "Data source",
+            value=st.session_state.source,
+            placeholder="e.g. Census of India 2011",
+        )
+        boundary_year = st.text_input(
+            "Shapefile boundary vintage year",
+            value=st.session_state.boundary_year,
+            placeholder="e.g. 2011",
+        )
+
+    with c_right:
+        st.subheader("Colour & classification")
+
+        # Classification scheme
+        scheme = st.selectbox(
+            "Classification scheme",
+            options=list(CLASSIFICATION_SCHEMES.keys()),
+            index=0,
+            format_func=lambda k: k.replace("_", " ").title(),
+        )
+        st.caption(CLASSIFICATION_SCHEMES[scheme])
+
+        # Colour ramp
+        cmap_name = st.selectbox(
+            "Colour ramp",
+            options=list(COLOR_RAMPS.keys()),
+            index=0,
+        )
+        st.caption(COLOR_RAMPS[cmap_name])
+
+        n_classes = st.slider("Number of colour classes", min_value=3, max_value=8, value=5)
+
+    col_b, col_c = st.columns([1, 5])
+    with col_b:
+        if st.button("← Back"):
+            st.session_state.step = 5
+            st.rerun()
+    with col_c:
+        if st.button("Render map →", type="primary"):
+            st.session_state.title         = title
+            st.session_state.source        = source
+            st.session_state.boundary_year = boundary_year
+            st.session_state.scheme        = scheme
+            st.session_state.cmap_name     = cmap_name
+            st.session_state.n_classes     = n_classes
+            st.session_state.step = 7
+            st.rerun()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 7 — Preview and export
+# ═══════════════════════════════════════════════════════════════════════════════
+
+elif st.session_state.step == 7:
+    st.header("Step 7: Preview & export")
+
+    df            = st.session_state.df
+    gdf           = st.session_state.gdf
+    data_name_col = st.session_state.data_name_col
+    shp_name_col  = st.session_state.shp_name_col
+    value_col     = st.session_state.value_col
+    result        = st.session_state.match_result
+
+    # ── Build merged GDF (or use cached) ─────────────────────────────────
+    if st.session_state.merged_gdf is None:
+        with st.spinner("Joining data to shapefile…"):
+            name_map = result.as_dict()
+            merged = join_to_geo(
+                gdf           = gdf,
+                data_df       = df,
+                data_name_col = data_name_col,
+                shp_name_col  = shp_name_col,
+                name_map      = name_map,
+                value_col     = value_col,
+            )
+            st.session_state.merged_gdf = merged
+
+    merged = st.session_state.merged_gdf
+
+    # ── Render (or use cached) ────────────────────────────────────────────
+    render_params = dict(
+        value_col     = "_value",
+        scheme        = st.session_state.scheme,
+        cmap_name     = st.session_state.cmap_name,
+        n_classes     = st.session_state.n_classes,
+        title         = st.session_state.title,
+        source        = st.session_state.source,
+        boundary_year = st.session_state.boundary_year,
+    )
+
+    if st.session_state.fig is None:
+        with st.spinner("Rendering static map…"):
+            st.session_state.fig = render_static(merged, **render_params)
+
+    if st.session_state.folium_map is None:
+        with st.spinner("Building interactive map…"):
+            # render_interactive doesn't use source/boundary_year (footnote is
+            # static-map-only) or figsize, so filter them out of the shared dict.
+            ri_params = {k: v for k, v in render_params.items()
+                         if k not in ("figsize", "source", "boundary_year")}
+            st.session_state.folium_map = render_interactive(
+                gdf       = merged,
+                label_col = shp_name_col,
+                **ri_params,
+            )
+
+    fig        = st.session_state.fig
+    folium_map = st.session_state.folium_map
+
+    # ── Tabs: Static | Interactive | Data ────────────────────────────────
+    tab_static, tab_interactive, tab_data = st.tabs(
+        ["📷 Static map", "🌐 Interactive map", "📊 Matched data"]
+    )
+
+    with tab_static:
+        st.pyplot(fig, use_container_width=True)
+
+    with tab_interactive:
+        # Embed folium map via HTML component
+        html_bytes = map_to_html_bytes(folium_map)
+        st.components.v1.html(html_bytes.decode("utf-8"), height=600, scrolling=False)
+
+    with tab_data:
+        name_map   = result.as_dict()
+        mapped_df  = df.copy()
+        mapped_df["__shp_name"] = mapped_df[data_name_col].map(name_map)
+        st.dataframe(
+            mapped_df[[data_name_col, value_col, "__shp_name"]].rename(
+                columns={"__shp_name": "Shapefile district"}
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        unmatched_count = result.unmatched.__len__()
+        if unmatched_count:
+            st.warning(
+                f"⚠ {unmatched_count} district(s) have no data and will appear as "
+                f"gray hatching on the map: {result.unmatched}"
+            )
+
+    st.divider()
+    st.subheader("⬇ Downloads")
+
+    dl1, dl2, dl3, dl4, dl5, dl6 = st.columns(6)
+
+    with dl1:
+        st.download_button(
+            "PNG",
+            data     = fig_to_bytes(fig, "png"),
+            file_name= "district_map.png",
+            mime     = "image/png",
+            use_container_width=True,
+        )
+
+    with dl2:
+        st.download_button(
+            "JPG",
+            data     = fig_to_bytes(fig, "jpg"),
+            file_name= "district_map.jpg",
+            mime     = "image/jpeg",
+            use_container_width=True,
+        )
+
+    with dl3:
+        st.download_button(
+            "SVG",
+            data     = fig_to_bytes(fig, "svg"),
+            file_name= "district_map.svg",
+            mime     = "image/svg+xml",
+            use_container_width=True,
+        )
+
+    with dl4:
+        st.download_button(
+            "Interactive HTML",
+            data     = map_to_html_bytes(folium_map),
+            file_name= "district_map.html",
+            mime     = "text/html",
+            use_container_width=True,
+        )
+
+    with dl5:
+        # Generate standalone .py script
+        name_map_full = result.as_dict()
+        data_records  = {}
+        for data_name, shp_name in name_map_full.items():
+            if shp_name:
+                rows = df.loc[df[data_name_col] == data_name, value_col]
+                data_records[shp_name] = float(rows.values[0]) if len(rows) else None
+
+        script_code = generate_script(
+            shapefile_path  = "<path/to/your/shapefile>",
+            shp_name_col    = shp_name_col,
+            data_records    = data_records,
+            value_col_label = value_col,
+            scheme          = st.session_state.scheme,
+            cmap_name       = st.session_state.cmap_name,
+            n_classes       = st.session_state.n_classes,
+            title           = st.session_state.title,
+            source          = st.session_state.source,
+            boundary_year   = st.session_state.boundary_year,
+        )
+        st.download_button(
+            "Python script",
+            data     = script_code.encode("utf-8"),
+            file_name= "reproduce_map.py",
+            mime     = "text/x-python",
+            use_container_width=True,
+            help     = "Standalone script that reproduces this exact map. "
+                       "Update the SHAPEFILE_PATH before running.",
+        )
+
+    with dl6:
+        st.download_button(
+            "GeoJSON",
+            data     = geojson_bytes(merged),
+            file_name= "district_map.geojson",
+            mime     = "application/geo+json",
+            use_container_width=True,
+            help     = "Shapefile polygons with your data values joined — "
+                       "import into QGIS, Mapbox, or any GIS tool.",
+        )
+
+    st.divider()
+    col_b, col_re = st.columns([1, 5])
+    with col_b:
+        if st.button("← Back to config"):
+            st.session_state.step = 6
+            st.session_state.fig  = None
+            st.session_state.folium_map = None
+            st.rerun()
+    with col_re:
+        if st.button("↺ Make a new map", type="secondary"):
+            for k in list(st.session_state.keys()):
+                del st.session_state[k]
+            st.rerun()
