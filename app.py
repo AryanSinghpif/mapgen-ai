@@ -57,11 +57,234 @@ from groq_matcher import apply_groq_results, batch_resolve
 # ── Page config ───────────────────────────────────────────────────────────────
 
 st.set_page_config(
-    page_title="District Map Generator",
-    page_icon="🗺️",
+    page_title="mapgen — District Map Generator",
+    page_icon=None,
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+st.markdown("""
+<style>
+/* ── Fonts ── */
+@import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Inter:wght@300;400;500;600&display=swap');
+
+/* ── Root palette ── */
+:root {
+    --cream:        #FDFAF6;
+    --cream-mid:    #F2EAE0;
+    --cream-dark:   #E8DDD0;
+    --orange:       #C8511B;
+    --orange-light: #E8621A;
+    --orange-pale:  #FBF0E9;
+    --ink:          #1C1208;
+    --ink-mid:      #4A3728;
+    --ink-light:    #8C7060;
+    --rule:         #DDD0C4;
+}
+
+/* ── Global ── */
+html, body, [class*="css"] {
+    font-family: 'Inter', sans-serif;
+    color: var(--ink);
+    background-color: var(--cream);
+}
+
+/* ── Hide Streamlit chrome ── */
+#MainMenu, footer, header { visibility: hidden; }
+.stDeployButton { display: none; }
+
+/* ── Main content area ── */
+.main .block-container {
+    padding: 2.5rem 3rem 3rem 3rem;
+    max-width: 1100px;
+}
+
+/* ── Sidebar ── */
+[data-testid="stSidebar"] {
+    background-color: var(--cream-mid);
+    border-right: 1px solid var(--rule);
+}
+[data-testid="stSidebar"] * { color: var(--ink-mid) !important; }
+[data-testid="stSidebar"] .stMarkdown p {
+    font-size: 0.82rem;
+    letter-spacing: 0.01em;
+    padding: 0.2rem 0;
+    color: var(--ink-mid) !important;
+}
+
+/* ── Wordmark ── */
+.mapgen-wordmark {
+    font-family: 'Libre Baskerville', serif;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--orange) !important;
+    letter-spacing: -0.01em;
+    margin-bottom: 0.1rem;
+}
+.mapgen-sub {
+    font-size: 0.72rem;
+    color: var(--ink-light) !important;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+/* ── Step progress in sidebar ── */
+.step-done  { color: var(--orange) !important; font-size: 0.82rem; }
+.step-active{ color: var(--ink) !important; font-size: 0.82rem; font-weight: 600; }
+.step-todo  { color: var(--ink-light) !important; font-size: 0.82rem; }
+
+/* ── Page headers ── */
+h1, h2, h3 {
+    font-family: 'Libre Baskerville', serif !important;
+    color: var(--ink) !important;
+    font-weight: 700 !important;
+}
+h1 { font-size: 2rem !important; letter-spacing: -0.02em; margin-bottom: 0.25rem !important; }
+h2 { font-size: 1.4rem !important; margin-bottom: 0.2rem !important; }
+h3 { font-size: 1.1rem !important; }
+
+/* ── Step label ── */
+.step-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--orange);
+    font-weight: 600;
+    margin-bottom: 0.3rem;
+}
+
+/* ── Dividers ── */
+hr { border-color: var(--rule) !important; margin: 1.5rem 0 !important; }
+
+/* ── Buttons ── */
+.stButton > button {
+    font-family: 'Inter', sans-serif !important;
+    font-weight: 500 !important;
+    font-size: 0.85rem !important;
+    border-radius: 4px !important;
+    padding: 0.5rem 1.4rem !important;
+    letter-spacing: 0.02em !important;
+    transition: all 0.15s ease !important;
+}
+.stButton > button[kind="primary"] {
+    background-color: var(--orange) !important;
+    border: none !important;
+    color: #fff !important;
+}
+.stButton > button[kind="primary"]:hover {
+    background-color: var(--orange-light) !important;
+}
+.stButton > button:not([kind="primary"]) {
+    background-color: transparent !important;
+    border: 1px solid var(--rule) !important;
+    color: var(--ink-mid) !important;
+}
+.stButton > button:not([kind="primary"]):hover {
+    border-color: var(--orange) !important;
+    color: var(--orange) !important;
+}
+
+/* ── File uploader ── */
+[data-testid="stFileUploader"] {
+    border: 1.5px dashed var(--cream-dark) !important;
+    border-radius: 6px !important;
+    background: var(--orange-pale) !important;
+    padding: 0.5rem !important;
+}
+
+/* ── Inputs ── */
+.stTextInput input, .stSelectbox > div > div {
+    border-radius: 4px !important;
+    border-color: var(--cream-dark) !important;
+    font-size: 0.88rem !important;
+}
+.stTextInput input:focus {
+    border-color: var(--orange) !important;
+    box-shadow: 0 0 0 2px rgba(200,81,27,0.12) !important;
+}
+
+/* ── Metrics ── */
+[data-testid="metric-container"] {
+    background: var(--orange-pale);
+    border: 1px solid var(--cream-dark);
+    border-radius: 6px;
+    padding: 1rem 1.2rem;
+}
+[data-testid="metric-container"] [data-testid="stMetricLabel"] {
+    font-size: 0.72rem !important;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink-light) !important;
+}
+[data-testid="metric-container"] [data-testid="stMetricValue"] {
+    font-size: 1.6rem !important;
+    font-weight: 600 !important;
+    color: var(--orange) !important;
+}
+
+/* ── Alerts ── */
+.stSuccess { background: #F0FAF0 !important; border-left: 3px solid #3D9A3D !important; border-radius: 4px !important; }
+.stWarning { background: #FFF8EE !important; border-left: 3px solid var(--orange) !important; border-radius: 4px !important; }
+.stInfo    { background: var(--orange-pale) !important; border-left: 3px solid var(--orange) !important; border-radius: 4px !important; }
+.stError   { background: #FFF0F0 !important; border-left: 3px solid #C0392B !important; border-radius: 4px !important; }
+
+/* ── Dataframe ── */
+[data-testid="stDataFrame"] {
+    border: 1px solid var(--cream-dark) !important;
+    border-radius: 6px !important;
+    overflow: hidden !important;
+}
+
+/* ── Tabs ── */
+.stTabs [data-baseweb="tab-list"] {
+    border-bottom: 1px solid var(--rule) !important;
+    gap: 0 !important;
+}
+.stTabs [data-baseweb="tab"] {
+    font-size: 0.82rem !important;
+    font-weight: 500 !important;
+    padding: 0.6rem 1.4rem !important;
+    color: var(--ink-light) !important;
+    border-bottom: 2px solid transparent !important;
+    letter-spacing: 0.03em !important;
+}
+.stTabs [aria-selected="true"] {
+    color: var(--orange) !important;
+    border-bottom-color: var(--orange) !important;
+}
+
+/* ── Expander ── */
+.streamlit-expanderHeader {
+    font-size: 0.85rem !important;
+    font-weight: 500 !important;
+    color: var(--ink-mid) !important;
+}
+
+/* ── Caption / small text ── */
+.stCaption, small, [data-testid="stCaptionContainer"] {
+    color: var(--ink-light) !important;
+    font-size: 0.78rem !important;
+}
+
+/* ── Slider ── */
+.stSlider [data-baseweb="slider"] {
+    padding: 0.5rem 0 !important;
+}
+
+/* ── Sidebar reset button ── */
+[data-testid="stSidebar"] .stButton > button {
+    border: 1px solid var(--cream-dark) !important;
+    color: var(--ink-light) !important;
+    font-size: 0.78rem !important;
+    background: transparent !important;
+    margin-top: 0.5rem !important;
+}
+[data-testid="stSidebar"] .stButton > button:hover {
+    border-color: var(--orange) !important;
+    color: var(--orange) !important;
+}
+</style>
+""", unsafe_allow_html=True)
 
 
 # ── Session state helpers ─────────────────────────────────────────────────────
@@ -109,18 +332,18 @@ STEPS = [
 ]
 
 with st.sidebar:
-    st.title("🗺️ District Map Generator")
-    st.caption("Pahle India Foundation — Research Tools")
+    st.markdown('<div class="mapgen-wordmark">mapgen</div>', unsafe_allow_html=True)
+    st.markdown('<div class="mapgen-sub">Pahle India Foundation</div>', unsafe_allow_html=True)
     st.divider()
 
     for i, label in enumerate(STEPS, start=1):
         cur = st.session_state.step
         if i < cur:
-            st.markdown(f"✅ {label}")
+            st.markdown(f'<p class="step-done">— {label}</p>', unsafe_allow_html=True)
         elif i == cur:
-            st.markdown(f"**▶ {label}**")
+            st.markdown(f'<p class="step-active">› {label}</p>', unsafe_allow_html=True)
         else:
-            st.markdown(f"○ {label}")
+            st.markdown(f'<p class="step-todo">  {label}</p>', unsafe_allow_html=True)
 
     st.divider()
     _groq_default = os.environ.get("GROQ_API_KEY", "") or st.secrets.get("GROQ_API_KEY", "")
@@ -133,11 +356,11 @@ with st.sidebar:
     )
 
     st.caption(
-        "Groq is called **once per upload**, batching all unresolved names. "
-        "Leave blank to rely on rules + fuzzy matching alone."
+        "Groq is called once per upload, batching all unresolved names. "
+        "Leave blank to rely on rules and fuzzy matching alone."
     )
 
-    if st.button("↺ Start over", use_container_width=True):
+    if st.button("Start over", use_container_width=True):
         for k in list(st.session_state.keys()):
             del st.session_state[k]
         st.rerun()
@@ -173,7 +396,7 @@ if st.session_state.step == 1:
 
     st.divider()
     st.info(
-        "📂 Don't have a file yet? "
+        "Don't have a file yet? "
         "[Download the sample Karnataka CSV](sample_data/karnataka_sample.csv) "
         "to try the tool."
     )
@@ -207,7 +430,7 @@ elif st.session_state.step == 2:
                 "- [Datameet India Maps](https://github.com/datameet/maps) — open, state-level\n"
                 "- [GADM](https://gadm.org) — global, level-2 = districts\n"
                 "- [MapCruzin](https://mapcruzin.com)\n\n"
-                "⚠️ Note the **boundary vintage year** — it determines which districts exist "
+                "Note the **boundary vintage year** — it determines which districts exist "
                 "in the file. Post-2011 splits won't appear in a 2011-boundary shapefile."
             )
 
@@ -299,7 +522,7 @@ elif st.session_state.step == 2:
         except Exception as e:
             st.error(f"Could not read shapefile: {e}")
 
-    if st.button("← Back"):
+    if st.button("Back"):
         st.session_state.step = 1
         st.rerun()
 
@@ -369,7 +592,7 @@ elif st.session_state.step == 3:
     st.divider()
     col_b, col_c = st.columns([1, 5])
     with col_b:
-        if st.button("← Back"):
+        if st.button("Back"):
             st.session_state.step = 2
             st.rerun()
     with col_c:
@@ -510,7 +733,7 @@ elif st.session_state.step == 4:
     st.divider()
 
     # ── High-confidence table ─────────────────────────────────────────────
-    with st.expander(f"✅ Auto-matched ({len(result.high_confidence)})", expanded=False):
+    with st.expander(f"Auto-matched ({len(result.high_confidence)})", expanded=False):
         if result.high_confidence:
             rows = [{"Data name": m.data_name, "Shapefile name": m.shp_name,
                      "Tier": m.tier, "Confidence": f"{m.confidence:.0%}",
@@ -522,7 +745,7 @@ elif st.session_state.step == 4:
 
     col_b, col_c = st.columns([1, 5])
     with col_b:
-        if st.button("← Back"):
+        if st.button("Back"):
             st.session_state.step = 3
             st.rerun()
     with col_c:
@@ -556,7 +779,7 @@ elif st.session_state.step == 5:
 
     # ── Low-confidence matches ────────────────────────────────────────────
     if result.low_confidence:
-        st.subheader(f"🔶 Low-confidence matches ({len(result.low_confidence)})")
+        st.subheader(f"Low-confidence matches ({len(result.low_confidence)})")
         st.caption(
             "These were matched by fuzzy rules or LLM suggestion. "
             "Accept each suggestion or pick the correct shapefile district."
@@ -578,15 +801,15 @@ elif st.session_state.step == 5:
                         label_visibility="collapsed",
                     )
                 with c3:
-                    badge_color = "🟡" if m.confidence < 0.8 else "🟠"
-                    st.markdown(f"{badge_color} {m.confidence:.0%}")
+                    badge_color = ""
+                    st.markdown(f"{m.confidence:.0%}")
 
                 corrections[m.data_name] = None if choice.startswith("(skip") else choice
                 st.divider()
 
     # ── Unmatched ─────────────────────────────────────────────────────────
     if result.unmatched:
-        st.subheader(f"🔴 Unmatched ({len(result.unmatched)})")
+        st.subheader(f"Unmatched ({len(result.unmatched)})")
         st.caption(
             "No match was found by any rule. Assign manually or skip. "
             "Skipped districts will render as 'No data' (gray hatching)."
@@ -609,7 +832,7 @@ elif st.session_state.step == 5:
 
     col_b, col_c = st.columns([1, 5])
     with col_b:
-        if st.button("← Back"):
+        if st.button("Back"):
             st.session_state.step = 4
             st.rerun()
     with col_c:
@@ -672,7 +895,7 @@ elif st.session_state.step == 6:
 
     col_b, col_c = st.columns([1, 5])
     with col_b:
-        if st.button("← Back"):
+        if st.button("Back"):
             st.session_state.step = 5
             st.rerun()
     with col_c:
@@ -749,7 +972,7 @@ elif st.session_state.step == 7:
 
     # ── Tabs: Static | Interactive | Data ────────────────────────────────
     tab_static, tab_interactive, tab_data = st.tabs(
-        ["📷 Static map", "🌐 Interactive map", "📊 Matched data"]
+        ["Static map", "Interactive map", "Matched data"]
     )
 
     with tab_static:
@@ -775,12 +998,12 @@ elif st.session_state.step == 7:
         unmatched_count = result.unmatched.__len__()
         if unmatched_count:
             st.warning(
-                f"⚠ {unmatched_count} district(s) have no data and will appear as "
+                f"{unmatched_count} district(s) have no data and will appear as "
                 f"gray hatching on the map: {result.unmatched}"
             )
 
     st.divider()
-    st.subheader("⬇ Downloads")
+    st.subheader("Downloads")
 
     dl1, dl2, dl3, dl4, dl5, dl6 = st.columns(6)
 
@@ -865,13 +1088,13 @@ elif st.session_state.step == 7:
     st.divider()
     col_b, col_re = st.columns([1, 5])
     with col_b:
-        if st.button("← Back to config"):
+        if st.button("Back to config"):
             st.session_state.step = 6
             st.session_state.fig  = None
             st.session_state.folium_map = None
             st.rerun()
     with col_re:
-        if st.button("↺ Make a new map", type="secondary"):
+        if st.button("New map", type="secondary"):
             for k in list(st.session_state.keys()):
                 del st.session_state[k]
             st.rerun()
