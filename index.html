@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>mapgen — District Cartography</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300;1,400&family=Space+Grotesk:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --red: #C8102E;
+    --red-dark: #a50d25;
+    --white: #ffffff;
+    --off-white: #f5f0eb;
+    --ink: #111111;
+    --muted: #888888;
+    --rule: rgba(255,255,255,0.18);
+    --rule-dark: rgba(0,0,0,0.12);
+  }
+
+  html, body {
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    background: var(--red);
+    color: var(--white);
+    font-family: 'Space Grotesk', sans-serif;
+  }
+
+  .page {
+    display: grid;
+    height: 100vh;
+    width: 100vw;
+    grid-template-rows: 44px 1fr 40px;
+    grid-template-columns: 190px 1fr 300px;
+    grid-template-areas:
+      "topbar  topbar  topbar"
+      "left    center  right"
+      "footer  footer  footer";
+  }
+
+  /* ── TOP BAR ── */
+  .topbar {
+    grid-area: topbar;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 2rem;
+    border-bottom: 0.5px solid var(--rule);
+  }
+  .topbar-label {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 10px;
+    font-weight: 400;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.7);
+  }
+
+  /* ── LEFT SIDEBAR ── */
+  .left {
+    grid-area: left;
+    border-right: 0.5px solid var(--rule);
+    padding: 2.5rem 1.6rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 0;
+  }
+  .tier-label {
+    font-size: 9.5px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    font-weight: 400;
+    color: rgba(255,255,255,0.55);
+    padding: 7px 0;
+    border-bottom: 0.5px solid var(--rule);
+    cursor: default;
+    transition: color 0.15s;
+  }
+  .tier-label:first-child { border-top: 0.5px solid var(--rule); }
+  .tier-label:hover { color: rgba(255,255,255,0.95); }
+  .tier-label.active { color: var(--white); }
+
+  .left-bottom {
+    margin-top: auto;
+  }
+  .district-count {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 64px;
+    font-weight: 300;
+    line-height: 1;
+    color: rgba(255,255,255,0.85);
+  }
+  .district-sublabel {
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.45);
+    margin-top: 4px;
+    line-height: 1.5;
+  }
+
+  /* ── CENTER ── */
+  .center {
+    grid-area: center;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 2.5rem 3rem 2rem;
+  }
+  .vol-label {
+    font-size: 10px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.5);
+    font-weight: 400;
+  }
+  .hero-block {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 1.5rem 0;
+  }
+  .logotype {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: clamp(80px, 10vw, 128px);
+    font-weight: 300;
+    line-height: 0.9;
+    letter-spacing: -0.02em;
+    color: var(--white);
+  }
+  .rule-line {
+    width: 100%;
+    height: 0.5px;
+    background: rgba(255,255,255,0.35);
+    margin: 1.4rem 0;
+  }
+  .tagline {
+    font-family: 'Cormorant Garamond', serif;
+    font-style: italic;
+    font-size: clamp(18px, 2.2vw, 26px);
+    font-weight: 300;
+    line-height: 1.4;
+    color: rgba(255,255,255,0.88);
+    max-width: 520px;
+  }
+  .stats-row {
+    display: flex;
+    gap: 3.5rem;
+    align-items: flex-end;
+  }
+  .stat {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .stat-number {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 44px;
+    font-weight: 300;
+    line-height: 1;
+    color: var(--white);
+  }
+  .stat-label {
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.45);
+    font-weight: 400;
+  }
+  .cta-row {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    margin-top: 2rem;
+  }
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--white);
+    color: var(--red);
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    text-decoration: none;
+    padding: 10px 22px;
+    border: none;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .btn-primary:hover { background: var(--off-white); }
+  .btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: transparent;
+    color: rgba(255,255,255,0.65);
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    text-decoration: none;
+    padding: 10px 0;
+    border: none;
+    cursor: pointer;
+    transition: color 0.15s;
+  }
+  .btn-ghost:hover { color: var(--white); }
+
+  /* ── RIGHT PANEL ── */
+  .right {
+    grid-area: right;
+    background: var(--white);
+    color: var(--ink);
+    border-left: 0.5px solid var(--rule-dark);
+    display: flex;
+    flex-direction: column;
+    padding: 2.5rem 2rem;
+    gap: 0;
+    overflow: hidden;
+  }
+  .right-block {
+    padding-bottom: 1.8rem;
+    margin-bottom: 1.8rem;
+    border-bottom: 0.5px solid var(--rule-dark);
+  }
+  .right-block:last-of-type {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+  }
+  .right-heading {
+    font-size: 9.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    font-weight: 500;
+    color: #999;
+    margin-bottom: 0.75rem;
+  }
+  .right-body {
+    font-size: 13.5px;
+    line-height: 1.65;
+    color: #333;
+    font-weight: 300;
+    font-family: 'Space Grotesk', sans-serif;
+  }
+  .right-quote {
+    font-family: 'Cormorant Garamond', serif;
+    font-style: italic;
+    font-size: 15px;
+    line-height: 1.55;
+    color: #555;
+    margin-top: auto;
+    padding-top: 1.8rem;
+    border-top: 0.5px solid var(--rule-dark);
+  }
+
+  /* ── FOOTER ── */
+  .footer {
+    grid-area: footer;
+    background: #111111;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 2rem;
+    border-top: 0.5px solid rgba(255,255,255,0.08);
+  }
+  .footer-label {
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.35);
+    font-weight: 400;
+  }
+
+  /* ── VERTICAL DIVIDER ACCENT ── */
+  .left-rule {
+    position: absolute;
+    left: 190px;
+    top: 44px;
+    bottom: 40px;
+    width: 0.5px;
+    background: var(--rule);
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <!-- TOP BAR -->
+  <header class="topbar">
+    <span class="topbar-label">Pahle India Foundation &nbsp;/&nbsp; Research Tools</span>
+    <span class="topbar-label">District Cartography &nbsp;/&nbsp; 2025</span>
+  </header>
+
+  <!-- LEFT SIDEBAR -->
+  <aside class="left">
+    <div class="tier-label active">Exact Match</div>
+    <div class="tier-label">Normalized</div>
+    <div class="tier-label">Alias Lookup</div>
+    <div class="tier-label">Fuzzy Score</div>
+    <div class="tier-label">LLM Resolve</div>
+
+    <div class="left-bottom">
+      <div class="district-count">820</div>
+      <div class="district-sublabel">Districts<br>India-wide</div>
+    </div>
+  </aside>
+
+  <!-- CENTER -->
+  <main class="center">
+    <div class="vol-label">Vol. 1 &nbsp;—&nbsp; Policy Cartography</div>
+
+    <div class="hero-block">
+      <div class="logotype">mapgen</div>
+      <div class="rule-line"></div>
+      <p class="tagline">District choropleth maps for Indian<br>policy research — in minutes, not days.</p>
+    </div>
+
+    <div>
+      <div class="stats-row">
+        <div class="stat">
+          <span class="stat-number">6</span>
+          <span class="stat-label">Export Formats</span>
+        </div>
+        <div class="stat">
+          <span class="stat-number">5</span>
+          <span class="stat-label">Matching Tiers</span>
+        </div>
+        <div class="stat">
+          <span class="stat-number">0</span>
+          <span class="stat-label">GIS Skills Needed</span>
+        </div>
+      </div>
+      <div class="cta-row">
+        <a href="app.py" class="btn-primary">Open Tool &rarr;</a>
+        <a href="https://github.com" class="btn-ghost">View on GitHub</a>
+      </div>
+    </div>
+  </main>
+
+  <!-- RIGHT PANEL -->
+  <aside class="right">
+    <div class="right-block">
+      <div class="right-heading">What it does</div>
+      <p class="right-body">Upload a CSV or Excel file with district-level data. mapgen resolves name variants, detects the state, crops the boundary file, and renders a publication-ready map.</p>
+    </div>
+
+    <div class="right-block">
+      <div class="right-heading">Honest by design</div>
+      <p class="right-body">Missing districts render as gray hatching — never as zero. Every map carries a source line and boundary vintage year.</p>
+    </div>
+
+    <div class="right-block">
+      <div class="right-heading">Export formats</div>
+      <p class="right-body">PNG &middot; JPG &middot; SVG &middot; Interactive HTML &middot; GeoJSON &middot; Standalone Python script that regenerates the exact map.</p>
+    </div>
+
+    <div class="right-quote">
+      &ldquo;A silently mis-assigned district in a published map is the worst failure mode.&rdquo;
+    </div>
+  </aside>
+
+  <!-- FOOTER -->
+  <footer class="footer">
+    <span class="footer-label">India &nbsp;—&nbsp; 2024 Boundaries &nbsp;—&nbsp; 28 States &nbsp;—&nbsp; 8 UTs</span>
+    <span class="footer-label">CSV &nbsp;&middot;&nbsp; XLSX &nbsp;&middot;&nbsp; PNG &nbsp;&middot;&nbsp; HTML &nbsp;&middot;&nbsp; GeoJSON</span>
+  </footer>
+
+</div>
+
+</body>
+</html>
