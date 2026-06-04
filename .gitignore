@@ -12,4 +12,5 @@ output/
 *.svg
 *.html
 !sample_data/
+!landing.html
 .streamlit/secrets.toml

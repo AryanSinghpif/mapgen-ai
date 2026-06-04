@@ -377,151 +377,22 @@ with st.sidebar:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# STEP 0 — Landing page
-# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 0 -- Landing page
+# ===========================================================================
 
 if st.session_state.step == 0:
-
-    LANDING_CSS = """
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300;1,400&family=Inter:wght@300;400&display=swap');
-
-[data-testid="stSidebar"]        { display: none !important; }
-[data-testid="collapsedControl"] { display: none !important; }
-.main .block-container           { padding: 0 !important; max-width: 100% !important; }
-
-.vg { min-height:100vh; background:#0A0A0A; display:flex; flex-direction:column; font-family:'Inter',sans-serif; }
-
-.vg-bar { display:flex; justify-content:space-between; align-items:center;
-          padding:1.8rem 4rem; border-bottom:1px solid #222; }
-.vg-bar span { font-size:0.59rem; letter-spacing:0.22em; text-transform:uppercase; color:#555; }
-
-.vg-body { flex:1; display:grid; grid-template-columns:1fr 2.6fr 1fr; }
-
-.vg-left  { border-right:1px solid #222; padding:3rem 2.5rem;
-            display:flex; flex-direction:column; justify-content:space-between; }
-.vg-right { border-left:1px solid #222; padding:3rem 2.5rem;
-            display:flex; flex-direction:column; gap:2.2rem; }
-
-.vg-label { font-size:0.57rem; letter-spacing:0.22em; text-transform:uppercase;
-            color:#444; line-height:2.1; }
-
-.vg-stat-n { font-family:'Cormorant Garamond',serif; font-size:3.2rem;
-             font-weight:300; color:#D42B2B; line-height:1; letter-spacing:-0.02em; }
-.vg-stat-l { font-size:0.57rem; letter-spacing:0.18em; text-transform:uppercase;
-             color:#444; margin-top:0.3rem; }
-
-.vg-centre { padding:4rem 5.5rem; display:flex; flex-direction:column; justify-content:center; }
-
-.vg-issue { font-size:0.58rem; letter-spacing:0.26em; text-transform:uppercase;
-            color:#D42B2B; margin-bottom:2.2rem; }
-
-.vg-title { font-family:'Cormorant Garamond',serif; font-weight:300; color:#FFFFFF;
-            line-height:0.9; letter-spacing:-0.03em; margin-bottom:0.5rem;
-            font-size:clamp(4.5rem,9vw,8.5rem); }
-.vg-title em { font-style:italic; color:#D42B2B; }
-
-.vg-rule { width:100%; height:1px; background:#D42B2B; margin:2rem 0; opacity:0.5; }
-
-.vg-sub { font-family:'Cormorant Garamond',serif; font-size:1.3rem; font-style:italic;
-          font-weight:300; color:#888; line-height:1.6; max-width:460px; margin-bottom:3rem; }
-
-.vg-meta { display:flex; gap:3rem; align-items:flex-end; }
-.vg-meta-val { font-family:'Cormorant Garamond',serif; font-size:1.8rem;
-               font-weight:300; color:#FFFFFF; line-height:1; }
-.vg-meta-key { font-size:0.57rem; letter-spacing:0.18em; text-transform:uppercase; color:#444; }
-
-.vg-rt  { font-size:0.77rem; color:#666; line-height:1.8; }
-.vg-rdv { height:1px; background:#222; }
-.vg-rq  { font-family:'Cormorant Garamond',serif; font-size:0.95rem;
-          font-style:italic; color:#444; line-height:1.65; }
-
-.vg-foot { border-top:1px solid #222; padding:1.3rem 4rem;
-           display:flex; justify-content:space-between; align-items:center; }
-.vg-foot span { font-size:0.57rem; letter-spacing:0.18em;
-                text-transform:uppercase; color:#333; }
-</style>
-
-<div class="vg">
-  <div class="vg-bar">
-    <span>Pahle India Foundation &nbsp;/&nbsp; Research Tools</span>
-    <span>District Cartography &nbsp;/&nbsp; 2025</span>
-  </div>
-
-  <div class="vg-body">
-
-    <div class="vg-left">
-      <div class="vg-label">Exact match<br>Normalized<br>Alias lookup<br>Fuzzy score<br>LLM resolve</div>
-      <div>
-        <div class="vg-stat-n">820</div>
-        <div class="vg-stat-l">Districts<br>India-wide</div>
-      </div>
-    </div>
-
-    <div class="vg-centre">
-      <div class="vg-issue">Vol. I &nbsp;&mdash;&nbsp; Policy Cartography</div>
-      <div class="vg-title">map<em>gen</em></div>
-      <div class="vg-rule"></div>
-      <div class="vg-sub">District choropleth maps for Indian<br>policy research &mdash; in minutes, not days.</div>
-      <div class="vg-meta">
-        <div><div class="vg-meta-val">6</div><div class="vg-meta-key">Export formats</div></div>
-        <div><div class="vg-meta-val">5</div><div class="vg-meta-key">Matching tiers</div></div>
-        <div><div class="vg-meta-val">0</div><div class="vg-meta-key">GIS skills needed</div></div>
-      </div>
-    </div>
-
-    <div class="vg-right">
-      <div>
-        <div class="vg-label" style="margin-bottom:0.6rem;">What it does</div>
-        <div class="vg-rt">Upload a CSV or Excel file with district-level data.
-        mapgen resolves name variants, detects the state, crops the boundary file,
-        and renders a publication-ready map.</div>
-      </div>
-      <div class="vg-rdv"></div>
-      <div>
-        <div class="vg-label" style="margin-bottom:0.6rem;">Honest by design</div>
-        <div class="vg-rt">Missing districts render as gray hatching &mdash; never as zero.
-        Every map carries a source line and boundary vintage year.</div>
-      </div>
-      <div class="vg-rdv"></div>
-      <div class="vg-rq">&ldquo;A silently mis-assigned district in a published map is the worst failure mode.&rdquo;</div>
-    </div>
-
-  </div>
-
-  <div class="vg-foot">
-    <span>India &nbsp;&mdash;&nbsp; 2024 Boundaries &nbsp;&mdash;&nbsp; 28 States &nbsp;&mdash;&nbsp; 8 UTs</span>
-    <span>CSV &nbsp;&middot;&nbsp; XLSX &nbsp;&middot;&nbsp; PNG &nbsp;&middot;&nbsp; SVG &nbsp;&middot;&nbsp; HTML &nbsp;&middot;&nbsp; GeoJSON</span>
-  </div>
-</div>
-"""
-
-    # Inject full landing as a self-contained HTML page via components
-    # (bypasses Streamlit markdown sanitiser — no code-block escaping)
-    FULL_PAGE = """<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<style>
-""" + LANDING_CSS[LANDING_CSS.index("<style>")+7:LANDING_CSS.index("</style>")] + """
-body { margin:0; padding:0; }
-</style>
-</head>
-<body>
-""" + LANDING_CSS[LANDING_CSS.index("</style>")+8:] + """
-</body>
-</html>"""
-
-    st.components.v1.html(FULL_PAGE, height=780, scrolling=False)
-
+    import os as _os
+    _lpath = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), 'landing.html')
+    with open(_lpath) as _f:
+        _html = _f.read()
+    st.components.v1.html(_html, height=780, scrolling=False)
     _, col_btn, _ = st.columns([1.3, 1, 1.3])
     with col_btn:
-        if st.button("Enter", type="primary", use_container_width=True):
+        if st.button('Enter', type='primary', use_container_width=True):
             st.session_state.step = 1
             st.rerun()
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # STEP 1 — Upload data file
 # ═══════════════════════════════════════════════════════════════════════════════
 
