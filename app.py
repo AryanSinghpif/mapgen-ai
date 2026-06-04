@@ -29,10 +29,12 @@ import pandas as pd
 import streamlit as st
 
 from state_agent import (
+    run as state_agent_run,
     detect_state,
     filter_by_state,
     resolve_ambiguous_state,
     StateDetectionResult,
+    StateAgentResult,
 )
 from map_engine import (
     CLASSIFICATION_SCHEMES,
@@ -780,48 +782,54 @@ elif st.session_state.step == 3:
             gdf        = st.session_state.gdf
             data_names = df[data_name_col].astype(str).tolist()
 
-            # ── Detect district vs state level ────────────────────────────
-            # Use profile's level if already detected, else re-detect from actual geo col
-            level = st.session_state.data_level or detect_data_level(data_names)
-            st.session_state.data_level = level
+            # ── State Agent: authoritative level + state detection ────────
+            _district_col = shp_name_col
+            _state_col    = "STATE_UT" if "STATE_UT" in gdf.columns else \
+                            next((c for c in gdf.columns if "state" in c.lower()), None)
 
-            if level == "state":
-                # State-level: skip district state-detection, use full shapefile
-                st.session_state.state_detection = None
-                st.session_state.active_gdf      = gdf   # full all-India
-            else:
-                # District-level: run state detection agent + crop
-                with st.spinner("Detecting state from district names…"):
-                    detection = detect_state(
-                        data_names   = data_names,
-                        gdf          = gdf,
-                        shp_name_col = shp_name_col,
-                        state_col    = "STATE_UT" if "STATE_UT" in gdf.columns else
-                                       next((c for c in gdf.columns
-                                             if "state" in c.lower()), None),
+            with st.spinner("Running State Detection Agent…"):
+                agent_result = state_agent_run(
+                    geo_names    = data_names,
+                    gdf          = gdf,
+                    district_col = _district_col,
+                    state_col    = _state_col or "STATE_UT",
+                )
+
+            # Groq fallback for ambiguous district data
+            if (agent_result.level == "district"
+                    and agent_result.multi_state
+                    and groq_key
+                    and len(agent_result.all_states) > 1):
+                with st.spinner("Ambiguous — asking Groq to resolve state…"):
+                    resolved = resolve_ambiguous_state(
+                        geo_names  = data_names,
+                        candidates = agent_result.all_states,
+                        api_key    = groq_key,
                     )
-                st.session_state.state_detection = detection
+                if resolved:
+                    agent_result.state       = resolved
+                    agent_result.multi_state = False
+                    agent_result.coverage    = "single_state"
 
-                if detection.multi_state and groq_key and len(detection.all_states) > 1:
-                    with st.spinner("Ambiguous state — asking Groq to resolve…"):
-                        resolved = resolve_ambiguous_state(
-                            data_names = data_names,
-                            candidates = detection.all_states,
-                            api_key    = groq_key,
-                        )
-                    if resolved:
-                        detection.state       = resolved
-                        detection.multi_state = False
+            # Commit level to session (agent overrides data_analyzer's guess)
+            st.session_state.data_level      = agent_result.level
+            st.session_state.state_detection = detect_state(   # keep compat shim for step 4 banner
+                data_names   = data_names,
+                gdf          = gdf,
+                shp_name_col = _district_col,
+                state_col    = _state_col or "STATE_UT",
+            )
 
-                state_col_name = "STATE_UT" if "STATE_UT" in gdf.columns else None
-                if detection.state and state_col_name:
-                    try:
-                        cropped = filter_by_state(gdf, detection.state, state_col_name)
-                        st.session_state.active_gdf = cropped
-                    except Exception:
-                        st.session_state.active_gdf = gdf
-                else:
+            # Crop shapefile for single-state district data
+            if agent_result.level == "district" and agent_result.state and _state_col:
+                try:
+                    st.session_state.active_gdf = filter_by_state(
+                        gdf, agent_result.state, _state_col
+                    )
+                except Exception:
                     st.session_state.active_gdf = gdf
+            else:
+                st.session_state.active_gdf = gdf   # state-level or multi-state: full India
 
             st.session_state.step = 4
             st.rerun()
@@ -841,25 +849,31 @@ elif st.session_state.step == 4:
     value_col     = st.session_state.value_col
     detection     = st.session_state.state_detection
 
-    # ── State detection banner ────────────────────────────────────────────
-    if detection:
-        state_col = "STATE_UT" if "STATE_UT" in st.session_state.gdf.columns else None
-        full_gdf  = st.session_state.gdf
+    # ── Agent 2 result banner ─────────────────────────────────────────────
+    state_col = "STATE_UT" if "STATE_UT" in st.session_state.gdf.columns else None
+    full_gdf  = st.session_state.gdf
+    data_level = st.session_state.data_level or "district"
 
+    if data_level == "state":
+        st.success(
+            f"**State-level data** — mapping all {len(full_gdf):,} districts across India, "
+            f"coloured by state value. ({detection.matched if detection else '?'}/{detection.total if detection else '?'} state names matched)"
+        )
+    elif detection:
         if detection.state and not detection.multi_state:
             st.success(
-                f"**State detected: {detection.state}** — "
+                f"**District-level · {detection.state}** — "
                 f"shapefile cropped to {len(gdf):,} districts "
-                f"({detection.matched}/{detection.total} data names matched, "
+                f"({detection.matched}/{detection.total} names matched, "
                 f"{detection.confidence:.0%} confidence)"
             )
         elif detection.multi_state:
             st.warning(
-                f"**Multi-state data detected:** {', '.join(detection.all_states)}. "
+                f"**Multi-state district data** — {', '.join(detection.all_states)}. "
                 "Using full all-India shapefile."
             )
         else:
-            st.info("State could not be detected — using full all-India shapefile.")
+            st.info("**District-level** — state could not be determined. Using full all-India shapefile.")
 
         # Override picker
         if state_col and detection.all_states:
