@@ -40,14 +40,17 @@ from map_engine import (
     HIGH_CONF_THRESHOLD,
     MatchResult,
     apply_manual_corrections,
+    detect_data_level,
     detect_district_column,
     fig_to_bytes,
     generate_script,
     geojson_bytes,
     join_to_geo,
+    join_state_to_geo,
     load_shapefile,
     map_to_html_bytes,
     match_districts,
+    match_states,
     render_interactive,
     render_static,
 )
@@ -315,6 +318,7 @@ def _init_state():
         "fig":            None,
         "folium_map":     None,
         "user_prompt":    "",
+        "data_level":     None,   # "district" | "state" — auto-detected at step 3
         "title":          "",
         "source":         "",
         "boundary_year":  "",
@@ -687,43 +691,50 @@ elif st.session_state.step == 3:
             st.session_state.shp_name_col  = shp_name_col
             st.session_state.value_col     = value_col
 
-            # ── State detection agent ─────────────────────────────────────
             gdf        = st.session_state.gdf
             data_names = df[data_name_col].astype(str).tolist()
 
-            with st.spinner("Detecting state from district names…"):
-                detection = detect_state(
-                    data_names   = data_names,
-                    gdf          = gdf,
-                    shp_name_col = shp_name_col,
-                    state_col    = "STATE_UT" if "STATE_UT" in gdf.columns else
-                                   next((c for c in gdf.columns
-                                         if "state" in c.lower()), None),
-                )
-            st.session_state.state_detection = detection
+            # ── Detect district vs state level ────────────────────────────
+            level = detect_data_level(data_names)
+            st.session_state.data_level = level
 
-            # If ambiguous and Groq key available → resolve
-            if detection.multi_state and groq_key and len(detection.all_states) > 1:
-                with st.spinner("Ambiguous state — asking Groq to resolve…"):
-                    resolved = resolve_ambiguous_state(
-                        data_names = data_names,
-                        candidates = detection.all_states,
-                        api_key    = groq_key,
-                    )
-                if resolved:
-                    detection.state       = resolved
-                    detection.multi_state = False
-
-            # Apply crop if single state detected
-            state_col = "STATE_UT" if "STATE_UT" in gdf.columns else None
-            if detection.state and state_col:
-                try:
-                    cropped = filter_by_state(gdf, detection.state, state_col)
-                    st.session_state.active_gdf = cropped
-                except Exception:
-                    st.session_state.active_gdf = gdf
+            if level == "state":
+                # State-level: skip district state-detection, use full shapefile
+                st.session_state.state_detection = None
+                st.session_state.active_gdf      = gdf   # full all-India
             else:
-                st.session_state.active_gdf = gdf
+                # District-level: run state detection agent + crop
+                with st.spinner("Detecting state from district names…"):
+                    detection = detect_state(
+                        data_names   = data_names,
+                        gdf          = gdf,
+                        shp_name_col = shp_name_col,
+                        state_col    = "STATE_UT" if "STATE_UT" in gdf.columns else
+                                       next((c for c in gdf.columns
+                                             if "state" in c.lower()), None),
+                    )
+                st.session_state.state_detection = detection
+
+                if detection.multi_state and groq_key and len(detection.all_states) > 1:
+                    with st.spinner("Ambiguous state — asking Groq to resolve…"):
+                        resolved = resolve_ambiguous_state(
+                            data_names = data_names,
+                            candidates = detection.all_states,
+                            api_key    = groq_key,
+                        )
+                    if resolved:
+                        detection.state       = resolved
+                        detection.multi_state = False
+
+                state_col_name = "STATE_UT" if "STATE_UT" in gdf.columns else None
+                if detection.state and state_col_name:
+                    try:
+                        cropped = filter_by_state(gdf, detection.state, state_col_name)
+                        st.session_state.active_gdf = cropped
+                    except Exception:
+                        st.session_state.active_gdf = gdf
+                else:
+                    st.session_state.active_gdf = gdf
 
             st.session_state.step = 4
             st.rerun()
@@ -791,10 +802,22 @@ elif st.session_state.step == 4:
     st.divider()
 
     data_names = df[data_name_col].astype(str).tolist()
-    shp_names  = gdf[shp_name_col].astype(str).tolist()
+    data_level = st.session_state.data_level or "district"
 
-    with st.spinner("Running tiered matching (rules + fuzzy)…"):
-        result = match_districts(data_names, shp_names)
+    # ── State-level data: match against STATE_UT, not district names ──────
+    if data_level == "state":
+        st.info("**State-level data detected** — matching against state names. All districts within each matched state will share the same value.")
+        state_col_name = "STATE_UT" if "STATE_UT" in gdf.columns else \
+                         next((c for c in gdf.columns if "state" in c.lower()), shp_name_col)
+        shp_state_vals = gdf[state_col_name].astype(str).dropna().unique().tolist()
+        with st.spinner("Matching state names…"):
+            result = match_states(data_names, shp_state_vals)
+        # Store state_col so join_state_to_geo knows which column to use
+        st.session_state.state_match_col = state_col_name
+    else:
+        shp_names  = gdf[shp_name_col].astype(str).tolist()
+        with st.spinner("Running tiered matching (rules + fuzzy)…"):
+            result = match_districts(data_names, shp_names)
 
     # ── Groq for leftovers ────────────────────────────────────────────────
     needs_groq = result.unmatched + [m.data_name for m in result.low_confidence]
@@ -1013,15 +1036,27 @@ elif st.session_state.step == 7:
     # ── Build merged GDF (or use cached) ─────────────────────────────────
     if st.session_state.merged_gdf is None:
         with st.spinner("Joining data to shapefile…"):
-            name_map = result.as_dict()
-            merged = join_to_geo(
-                gdf           = gdf,
-                data_df       = df,
-                data_name_col = data_name_col,
-                shp_name_col  = shp_name_col,
-                name_map      = name_map,
-                value_col     = value_col,
-            )
+            name_map   = result.as_dict()
+            data_level = st.session_state.data_level or "district"
+            if data_level == "state":
+                state_match_col = st.session_state.get("state_match_col", "STATE_UT")
+                merged = join_state_to_geo(
+                    gdf           = gdf,
+                    data_df       = df,
+                    data_name_col = data_name_col,
+                    state_col     = state_match_col,
+                    name_map      = name_map,
+                    value_col     = value_col,
+                )
+            else:
+                merged = join_to_geo(
+                    gdf           = gdf,
+                    data_df       = df,
+                    data_name_col = data_name_col,
+                    shp_name_col  = shp_name_col,
+                    name_map      = name_map,
+                    value_col     = value_col,
+                )
             st.session_state.merged_gdf = merged
 
     merged = st.session_state.merged_gdf
