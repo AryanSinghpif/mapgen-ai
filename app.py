@@ -737,7 +737,7 @@ elif st.session_state.step == 4:
     st.header("Step 4: District name matching")
 
     df            = st.session_state.df
-    gdf           = st.session_state.active_gdf or st.session_state.gdf
+    gdf           = st.session_state.active_gdf if st.session_state.active_gdf is not None else st.session_state.gdf
     data_name_col = st.session_state.data_name_col
     shp_name_col  = st.session_state.shp_name_col
     value_col     = st.session_state.value_col
@@ -850,7 +850,7 @@ elif st.session_state.step == 5:
     st.header("Step 5: Confirm district matches")
 
     result        = st.session_state.match_result
-    gdf           = st.session_state.active_gdf or st.session_state.gdf
+    gdf           = st.session_state.active_gdf if st.session_state.active_gdf is not None else st.session_state.gdf
     shp_name_col  = st.session_state.shp_name_col
     shp_names     = sorted(gdf[shp_name_col].dropna().astype(str).unique().tolist())
 
@@ -1004,7 +1004,7 @@ elif st.session_state.step == 7:
     st.header("Step 7: Preview & export")
 
     df            = st.session_state.df
-    gdf           = st.session_state.active_gdf or st.session_state.gdf
+    gdf           = st.session_state.active_gdf if st.session_state.active_gdf is not None else st.session_state.gdf
     data_name_col = st.session_state.data_name_col
     shp_name_col  = st.session_state.shp_name_col
     value_col     = st.session_state.value_col
