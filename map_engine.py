@@ -47,7 +47,7 @@ from aliases import ALIASES
 # ── Constants ────────────────────────────────────────────────────────────────
 
 HIGH_CONF_THRESHOLD = 0.88   # auto-accept above this
-FUZZY_CUTOFF       = 0.70   # fuzzy matches below this are sent to Groq/human
+FUZZY_CUTOFF       = 0.60   # fuzzy matches below this are sent to Groq/human
 MISSING_COLOR      = "#c8c8c8"
 MISSING_HATCH      = "///"
 NO_DATA_LABEL      = "No data"
@@ -92,6 +92,7 @@ def match_states(
     result = MatchResult()
 
     for name in data_names:
+        name = str(name).strip()
         n = normalize(name)
 
         # Tier 1 — exact
@@ -265,6 +266,7 @@ def match_districts(
     result = MatchResult()
 
     for name in data_names:
+        name = str(name).strip()   # remove leading/trailing whitespace / invisible chars
         norm_name = normalize(name)
 
         # ── Tier 1: Exact string match ────────────────────────────────────

@@ -40,8 +40,17 @@ ALIASES: dict[str, str] = {
     "sholapur":                 "solapur",
     "kolhapur":                 "kolhapur",
     "aurangabad":               "chhatrapati sambhajinagar",  # renamed 2023
+    "ch sambhaji nagar":        "chhatrapati sambhajinagar",  # abbreviated form
+    "chhatrapati sambhaji nagar": "chhatrapati sambhajinagar",
+    "sambhaji nagar":           "chhatrapati sambhajinagar",
     "osmanabad":                "dharashiv",                  # renamed 2023
+    "dharashiv":                "dharashiv",
+    "bid":                      "beed",
+    "beed":                     "beed",
+    "mumbai city":              "mumbai",
+    "greater mumbai":           "mumbai",
     "ahmednagar":               "ahilyanagar",                # renamed 2023
+    "ahilyanagar":              "ahilyanagar",
 
     "madras":                   "chennai",
     "coimbatore":               "coimbatore",         # unchanged but alias kept for completeness
