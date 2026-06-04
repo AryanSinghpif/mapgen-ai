@@ -496,18 +496,29 @@ if st.session_state.step == 0:
 </div>
 """
 
-    st.markdown(LANDING_CSS, unsafe_allow_html=True)
+    # Inject full landing as a self-contained HTML page via components
+    # (bypasses Streamlit markdown sanitiser — no code-block escaping)
+    FULL_PAGE = """<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+""" + LANDING_CSS[LANDING_CSS.index("<style>")+7:LANDING_CSS.index("</style>")] + """
+body { margin:0; padding:0; }
+</style>
+</head>
+<body>
+""" + LANDING_CSS[LANDING_CSS.index("</style>")+8:] + """
+</body>
+</html>"""
+
+    st.components.v1.html(FULL_PAGE, height=780, scrolling=False)
 
     _, col_btn, _ = st.columns([1.3, 1, 1.3])
     with col_btn:
-        st.markdown(
-            "<div style='margin-top:1.5rem;'>",
-            unsafe_allow_html=True,
-        )
         if st.button("Enter", type="primary", use_container_width=True):
             st.session_state.step = 1
             st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
