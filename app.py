@@ -380,56 +380,56 @@ if st.session_state.step == 0:
 [data-testid="collapsedControl"] { display: none !important; }
 .main .block-container           { padding: 0 !important; max-width: 100% !important; }
 
-.vg { min-height:100vh; background:#F9F5EF; display:flex; flex-direction:column; font-family:'Inter',sans-serif; }
+.vg { min-height:100vh; background:#0A0A0A; display:flex; flex-direction:column; font-family:'Inter',sans-serif; }
 
 .vg-bar { display:flex; justify-content:space-between; align-items:center;
-          padding:1.8rem 4rem; border-bottom:1px solid #D4C4B0; }
-.vg-bar span { font-size:0.59rem; letter-spacing:0.22em; text-transform:uppercase; color:#9A8070; }
+          padding:1.8rem 4rem; border-bottom:1px solid #222; }
+.vg-bar span { font-size:0.59rem; letter-spacing:0.22em; text-transform:uppercase; color:#555; }
 
 .vg-body { flex:1; display:grid; grid-template-columns:1fr 2.6fr 1fr; }
 
-.vg-left  { border-right:1px solid #D4C4B0; padding:3rem 2.5rem;
+.vg-left  { border-right:1px solid #222; padding:3rem 2.5rem;
             display:flex; flex-direction:column; justify-content:space-between; }
-.vg-right { border-left:1px solid #D4C4B0;  padding:3rem 2.5rem;
+.vg-right { border-left:1px solid #222; padding:3rem 2.5rem;
             display:flex; flex-direction:column; gap:2.2rem; }
 
 .vg-label { font-size:0.57rem; letter-spacing:0.22em; text-transform:uppercase;
-            color:#9A8070; line-height:2.1; }
+            color:#444; line-height:2.1; }
 
 .vg-stat-n { font-family:'Cormorant Garamond',serif; font-size:3.2rem;
-             font-weight:300; color:#C8511B; line-height:1; letter-spacing:-0.02em; }
+             font-weight:300; color:#D42B2B; line-height:1; letter-spacing:-0.02em; }
 .vg-stat-l { font-size:0.57rem; letter-spacing:0.18em; text-transform:uppercase;
-             color:#9A8070; margin-top:0.3rem; }
+             color:#444; margin-top:0.3rem; }
 
 .vg-centre { padding:4rem 5.5rem; display:flex; flex-direction:column; justify-content:center; }
 
 .vg-issue { font-size:0.58rem; letter-spacing:0.26em; text-transform:uppercase;
-            color:#C8511B; margin-bottom:2.2rem; }
+            color:#D42B2B; margin-bottom:2.2rem; }
 
-.vg-title { font-family:'Cormorant Garamond',serif; font-weight:300; color:#1C1208;
+.vg-title { font-family:'Cormorant Garamond',serif; font-weight:300; color:#FFFFFF;
             line-height:0.9; letter-spacing:-0.03em; margin-bottom:0.5rem;
             font-size:clamp(4.5rem,9vw,8.5rem); }
-.vg-title em { font-style:italic; color:#C8511B; }
+.vg-title em { font-style:italic; color:#D42B2B; }
 
-.vg-rule { width:100%; height:1px; background:#D4C4B0; margin:2rem 0; }
+.vg-rule { width:100%; height:1px; background:#D42B2B; margin:2rem 0; opacity:0.5; }
 
 .vg-sub { font-family:'Cormorant Garamond',serif; font-size:1.3rem; font-style:italic;
-          font-weight:300; color:#6A5040; line-height:1.6; max-width:460px; margin-bottom:3rem; }
+          font-weight:300; color:#888; line-height:1.6; max-width:460px; margin-bottom:3rem; }
 
 .vg-meta { display:flex; gap:3rem; align-items:flex-end; }
 .vg-meta-val { font-family:'Cormorant Garamond',serif; font-size:1.8rem;
-               font-weight:300; color:#1C1208; line-height:1; }
-.vg-meta-key { font-size:0.57rem; letter-spacing:0.18em; text-transform:uppercase; color:#9A8070; }
+               font-weight:300; color:#FFFFFF; line-height:1; }
+.vg-meta-key { font-size:0.57rem; letter-spacing:0.18em; text-transform:uppercase; color:#444; }
 
-.vg-rt  { font-size:0.77rem; color:#6A5040; line-height:1.8; }
-.vg-rdv { height:1px; background:#D4C4B0; }
+.vg-rt  { font-size:0.77rem; color:#666; line-height:1.8; }
+.vg-rdv { height:1px; background:#222; }
 .vg-rq  { font-family:'Cormorant Garamond',serif; font-size:0.95rem;
-          font-style:italic; color:#9A8070; line-height:1.65; }
+          font-style:italic; color:#444; line-height:1.65; }
 
-.vg-foot { border-top:1px solid #D4C4B0; padding:1.3rem 4rem;
+.vg-foot { border-top:1px solid #222; padding:1.3rem 4rem;
            display:flex; justify-content:space-between; align-items:center; }
 .vg-foot span { font-size:0.57rem; letter-spacing:0.18em;
-                text-transform:uppercase; color:#B0A090; }
+                text-transform:uppercase; color:#333; }
 </style>
 
 <div class="vg">
