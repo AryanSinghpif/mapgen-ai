@@ -741,30 +741,46 @@ elif st.session_state.step == 3:
                    if profile and profile.value_cols and profile.value_cols[0] in num_cols else 0)
     value_col = st.selectbox("Numeric column to map", options=num_cols, index=val_default)
 
-    # ── District name column in shapefile ─────────────────────────────────
+    # ── Shapefile column — smart default based on detected level ──────────
     st.subheader("Shapefile")
-    try:
-        auto_shp_col = detect_district_column(gdf)
-    except Exception:
-        auto_shp_col = None
-
     shp_str_cols = [c for c in gdf.columns if c != "geometry"]
-    default_idx  = shp_str_cols.index(auto_shp_col) if auto_shp_col in shp_str_cols else 0
+    detected_level = st.session_state.data_level or (profile.level if profile else "district")
 
-    shp_name_col = st.selectbox(
-        "Which shapefile column contains district names?",
-        options=shp_str_cols,
-        index=default_idx,
-        help=f"Auto-detected: '{auto_shp_col}'",
-    )
+    if detected_level == "state":
+        # For state-level data default to STATE_UT column
+        state_col_candidates = [c for c in shp_str_cols
+                                 if "state" in c.lower() or c.upper() in ("STATE_UT", "STATE", "ST")]
+        auto_shp_col = state_col_candidates[0] if state_col_candidates else "STATE_UT"
+        shp_label = "Which shapefile column contains state/UT names?"
+    else:
+        try:
+            auto_shp_col = detect_district_column(gdf)
+        except Exception:
+            auto_shp_col = None
+        shp_label = "Which shapefile column contains district names?"
+
+    default_idx = shp_str_cols.index(auto_shp_col) if auto_shp_col in shp_str_cols else 0
+
+    if detected_level == "state":
+        # Auto-use state column — no picker needed
+        shp_name_col = auto_shp_col
+        st.caption(f"Using shapefile column **{auto_shp_col}** for state matching.")
+    else:
+        shp_name_col = st.selectbox(
+            shp_label,
+            options=shp_str_cols,
+            index=default_idx,
+            help=f"Auto-detected: '{auto_shp_col}'",
+        )
 
     st.divider()
+    geo_label = "state" if detected_level == "state" else "district"
     col_l, col_r = st.columns([1, 1])
     with col_l:
-        st.markdown("**Sample district names in your data:**")
+        st.markdown(f"**Sample {geo_label} names in your data:**")
         st.write(df[data_name_col].dropna().unique()[:12].tolist())
     with col_r:
-        st.markdown("**Sample district names in shapefile:**")
+        st.markdown(f"**Sample {geo_label} names in shapefile:**")
         st.write(gdf[shp_name_col].dropna().unique()[:12].tolist())
 
     st.divider()
@@ -774,7 +790,8 @@ elif st.session_state.step == 3:
             st.session_state.step = 2
             st.rerun()
     with col_c:
-        if st.button("Detect state & run matching →", type="primary"):
+        btn_label = "Run state matching →" if detected_level == "state" else "Detect state & run matching →"
+        if st.button(btn_label, type="primary"):
             st.session_state.data_name_col = data_name_col
             st.session_state.shp_name_col  = shp_name_col
             st.session_state.value_col     = value_col
