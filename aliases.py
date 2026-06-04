@@ -17,6 +17,22 @@ match time, so "Bangalore" and "bangalore" both work.
 
 ALIASES: dict[str, str] = {
 
+    # ── UT mergers / renames (post-2019) ─────────────────────────────────
+    # Daman & Diu + Dadra & Nagar Haveli merged into one UT in 2020
+    "daman and nagar haveli":                          "dadra and nagar haveli and daman and diu",
+    "daman and diu":                                   "dadra and nagar haveli and daman and diu",
+    "dadra and nagar haveli":                          "dadra and nagar haveli and daman and diu",
+    "dadra nagar haveli and daman diu":                "dadra and nagar haveli and daman and diu",
+    "dnhdd":                                           "dadra and nagar haveli and daman and diu",
+    # J&K bifurcated into J&K UT + Ladakh UT in 2019 — both in shapefile as separate rows
+    "jammu kashmir":                                   "jammu and kashmir",
+    "jk":                                              "jammu and kashmir",
+    "j and k":                                         "jammu and kashmir",
+    # Andaman & Nicobar
+    "andaman nicobar":                                 "andaman and nicobar islands",
+    "andaman and nicobar":                             "andaman and nicobar islands",
+    "a and n islands":                                 "andaman and nicobar islands",
+
     # ── Major city / administrative renames ──────────────────────────────
     "bangalore":                "bengaluru",
     "bangalore urban":          "bengaluru urban",

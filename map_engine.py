@@ -205,10 +205,13 @@ class MatchResult:
 def normalize(name: str) -> str:
     """
     Canonical form used for all matching tiers.
-    Steps: strip accents → lowercase → remove punctuation → collapse whitespace.
+    Steps: & → and → strip accents → lowercase → remove punctuation → collapse whitespace.
     """
     if not isinstance(name, str):
         return ""
+    # Replace & with 'and' BEFORE stripping punctuation
+    # so "Jammu & Kashmir" → "Jammu and Kashmir" not "Jammu  Kashmir"
+    name = re.sub(r"\s*&\s*", " and ", name)
     # NFKD decompose → drop non-ASCII (strips diacritics like ā, ū, ñ)
     name = unicodedata.normalize("NFKD", name)
     name = name.encode("ascii", "ignore").decode("ascii")
