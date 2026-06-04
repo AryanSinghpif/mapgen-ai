@@ -381,11 +381,26 @@ with st.sidebar:
 # ===========================================================================
 
 if st.session_state.step == 0:
+    # Strip ALL Streamlit chrome and padding so landing fills the viewport
+    st.markdown("""
+    <style>
+    #MainMenu, footer, header, [data-testid="stSidebar"],
+    [data-testid="collapsedControl"] { display: none !important; }
+    .main .block-container {
+        padding: 0 !important;
+        margin: 0 !important;
+        max-width: 100% !important;
+        width: 100% !important;
+    }
+    section.main > div { padding: 0 !important; }
+    iframe { display: block; }
+    </style>
+    """, unsafe_allow_html=True)
     import os as _os
     _lpath = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), 'landing.html')
     with open(_lpath) as _f:
         _html = _f.read()
-    st.components.v1.html(_html, height=780, scrolling=False)
+    st.components.v1.html(_html, height=800, scrolling=False)
     _, col_btn, _ = st.columns([1.3, 1, 1.3])
     with col_btn:
         if st.button('Enter', type='primary', use_container_width=True):
