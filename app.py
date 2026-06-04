@@ -28,6 +28,12 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
 
+from state_agent import (
+    detect_state,
+    filter_by_state,
+    resolve_ambiguous_state,
+    StateDetectionResult,
+)
 from map_engine import (
     CLASSIFICATION_SCHEMES,
     COLOR_RAMPS,
@@ -68,9 +74,11 @@ def _init_state():
         "data_name_col":  None,
         "shp_name_col":   None,
         "value_col":      None,
-        "match_result":   None,
-        "corrections":    {},      # data_name → shp_name or None
-        "merged_gdf":     None,
+        "match_result":       None,
+        "corrections":        {},      # data_name → shp_name or None
+        "state_detection":    None,    # StateDetectionResult
+        "active_gdf":         None,    # GDF after optional state crop
+        "merged_gdf":         None,
         "fig":            None,
         "folium_map":     None,
         "title":          "",
@@ -365,10 +373,49 @@ elif st.session_state.step == 3:
             st.session_state.step = 2
             st.rerun()
     with col_c:
-        if st.button("Run district matching →", type="primary"):
+        if st.button("Detect state & run matching →", type="primary"):
             st.session_state.data_name_col = data_name_col
             st.session_state.shp_name_col  = shp_name_col
             st.session_state.value_col     = value_col
+
+            # ── State detection agent ─────────────────────────────────────
+            gdf        = st.session_state.gdf
+            data_names = df[data_name_col].astype(str).tolist()
+
+            with st.spinner("Detecting state from district names…"):
+                detection = detect_state(
+                    data_names   = data_names,
+                    gdf          = gdf,
+                    shp_name_col = shp_name_col,
+                    state_col    = "STATE_UT" if "STATE_UT" in gdf.columns else
+                                   next((c for c in gdf.columns
+                                         if "state" in c.lower()), None),
+                )
+            st.session_state.state_detection = detection
+
+            # If ambiguous and Groq key available → resolve
+            if detection.multi_state and groq_key and len(detection.all_states) > 1:
+                with st.spinner("Ambiguous state — asking Groq to resolve…"):
+                    resolved = resolve_ambiguous_state(
+                        data_names = data_names,
+                        candidates = detection.all_states,
+                        api_key    = groq_key,
+                    )
+                if resolved:
+                    detection.state       = resolved
+                    detection.multi_state = False
+
+            # Apply crop if single state detected
+            state_col = "STATE_UT" if "STATE_UT" in gdf.columns else None
+            if detection.state and state_col:
+                try:
+                    cropped = filter_by_state(gdf, detection.state, state_col)
+                    st.session_state.active_gdf = cropped
+                except Exception:
+                    st.session_state.active_gdf = gdf
+            else:
+                st.session_state.active_gdf = gdf
+
             st.session_state.step = 4
             st.rerun()
 
@@ -381,10 +428,58 @@ elif st.session_state.step == 4:
     st.header("Step 4: District name matching")
 
     df            = st.session_state.df
-    gdf           = st.session_state.gdf
+    gdf           = st.session_state.active_gdf or st.session_state.gdf
     data_name_col = st.session_state.data_name_col
     shp_name_col  = st.session_state.shp_name_col
     value_col     = st.session_state.value_col
+    detection     = st.session_state.state_detection
+
+    # ── State detection banner ────────────────────────────────────────────
+    if detection:
+        state_col = "STATE_UT" if "STATE_UT" in st.session_state.gdf.columns else None
+        full_gdf  = st.session_state.gdf
+
+        if detection.state and not detection.multi_state:
+            st.success(
+                f"**State detected: {detection.state}** — "
+                f"shapefile cropped to {len(gdf):,} districts "
+                f"({detection.matched}/{detection.total} data names matched, "
+                f"{detection.confidence:.0%} confidence)"
+            )
+        elif detection.multi_state:
+            st.warning(
+                f"**Multi-state data detected:** {', '.join(detection.all_states)}. "
+                "Using full all-India shapefile."
+            )
+        else:
+            st.info("State could not be detected — using full all-India shapefile.")
+
+        # Override picker
+        if state_col and detection.all_states:
+            with st.expander("Override state crop"):
+                override = st.selectbox(
+                    "Crop map to a specific state",
+                    options=["(use full all-India shapefile)"] + sorted(
+                        full_gdf[state_col].dropna().unique().tolist()
+                    ),
+                    index=0,
+                )
+                if st.button("Apply override"):
+                    if override.startswith("(use full"):
+                        st.session_state.active_gdf = full_gdf
+                    else:
+                        try:
+                            st.session_state.active_gdf = filter_by_state(
+                                full_gdf, override, state_col
+                            )
+                        except Exception as e:
+                            st.error(str(e))
+                    st.session_state.merged_gdf = None
+                    st.session_state.fig        = None
+                    st.session_state.folium_map = None
+                    st.rerun()
+
+    st.divider()
 
     data_names = df[data_name_col].astype(str).tolist()
     shp_names  = gdf[shp_name_col].astype(str).tolist()
@@ -446,7 +541,7 @@ elif st.session_state.step == 5:
     st.header("Step 5: Confirm district matches")
 
     result        = st.session_state.match_result
-    gdf           = st.session_state.gdf
+    gdf           = st.session_state.active_gdf or st.session_state.gdf
     shp_name_col  = st.session_state.shp_name_col
     shp_names     = sorted(gdf[shp_name_col].dropna().astype(str).unique().tolist())
 
@@ -600,7 +695,7 @@ elif st.session_state.step == 7:
     st.header("Step 7: Preview & export")
 
     df            = st.session_state.df
-    gdf           = st.session_state.gdf
+    gdf           = st.session_state.active_gdf or st.session_state.gdf
     data_name_col = st.session_state.data_name_col
     shp_name_col  = st.session_state.shp_name_col
     value_col     = st.session_state.value_col
