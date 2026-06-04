@@ -291,7 +291,7 @@ hr { border-color: var(--rule) !important; margin: 1.5rem 0 !important; }
 
 def _init_state():
     defaults = {
-        "step":           1,
+        "step":           0,
         "df":             None,
         "gdf":            None,
         "data_name_col":  None,
@@ -364,6 +364,301 @@ with st.sidebar:
         for k in list(st.session_state.keys()):
             del st.session_state[k]
         st.rerun()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 0 — Landing page
+# ═══════════════════════════════════════════════════════════════════════════════
+
+if st.session_state.step == 0:
+    st.markdown("""
+    <style>
+    /* Landing-specific overrides */
+    .main .block-container { padding: 0 !important; max-width: 100% !important; }
+    [data-testid="stSidebar"] { display: none !important; }
+    [data-testid="collapsedControl"] { display: none !important; }
+
+    .lp-hero {
+        background: linear-gradient(158deg, #1C1208 0%, #2E1A0E 55%, #3D2410 100%);
+        padding: 7rem 6rem 5rem 6rem;
+        position: relative;
+        overflow: hidden;
+    }
+    .lp-hero::before {
+        content: "";
+        position: absolute;
+        top: -120px; right: -120px;
+        width: 520px; height: 520px;
+        background: radial-gradient(circle, rgba(200,81,27,0.22) 0%, transparent 70%);
+        border-radius: 50%;
+    }
+    .lp-hero::after {
+        content: "";
+        position: absolute;
+        bottom: -80px; left: 30%;
+        width: 340px; height: 340px;
+        background: radial-gradient(circle, rgba(200,81,27,0.10) 0%, transparent 70%);
+        border-radius: 50%;
+    }
+    .lp-tag {
+        font-size: 0.68rem;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: #C8511B;
+        font-weight: 600;
+        margin-bottom: 1.4rem;
+    }
+    .lp-wordmark {
+        font-family: 'Libre Baskerville', serif;
+        font-size: 4.8rem;
+        font-weight: 700;
+        color: #FDFAF6;
+        letter-spacing: -0.04em;
+        line-height: 1;
+        margin-bottom: 0.4rem;
+    }
+    .lp-wordmark span { color: #C8511B; }
+    .lp-tagline {
+        font-family: 'Libre Baskerville', serif;
+        font-size: 1.35rem;
+        color: #A08878;
+        font-style: italic;
+        font-weight: 400;
+        margin-bottom: 2.8rem;
+        line-height: 1.5;
+        max-width: 560px;
+    }
+    .lp-desc {
+        font-size: 0.92rem;
+        color: #8C7060;
+        max-width: 520px;
+        line-height: 1.75;
+        margin-bottom: 3rem;
+    }
+    .lp-features {
+        display: flex;
+        gap: 2.5rem;
+        margin-bottom: 3.5rem;
+        flex-wrap: wrap;
+    }
+    .lp-feat {
+        display: flex;
+        flex-direction: column;
+        gap: 0.3rem;
+    }
+    .lp-feat-num {
+        font-family: 'Libre Baskerville', serif;
+        font-size: 1.6rem;
+        font-weight: 700;
+        color: #C8511B;
+        line-height: 1;
+    }
+    .lp-feat-label {
+        font-size: 0.72rem;
+        color: #8C7060;
+        text-transform: uppercase;
+        letter-spacing: 0.10em;
+    }
+    .lp-divider {
+        width: 40px;
+        height: 1px;
+        background: #C8511B;
+        margin-bottom: 1.5rem;
+        opacity: 0.6;
+    }
+
+    /* How it works strip */
+    .lp-how {
+        background: #FDFAF6;
+        padding: 4rem 6rem;
+        display: flex;
+        gap: 0;
+    }
+    .lp-step-card {
+        flex: 1;
+        padding: 0 2rem;
+        border-left: 1px solid #E8DDD0;
+        position: relative;
+    }
+    .lp-step-card:first-child { border-left: none; padding-left: 0; }
+    .lp-step-n {
+        font-family: 'Libre Baskerville', serif;
+        font-size: 2.8rem;
+        font-weight: 700;
+        color: #E8DDD0;
+        line-height: 1;
+        margin-bottom: 0.8rem;
+    }
+    .lp-step-title {
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #1C1208;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 0.5rem;
+    }
+    .lp-step-desc {
+        font-size: 0.82rem;
+        color: #8C7060;
+        line-height: 1.65;
+    }
+
+    /* Capabilities strip */
+    .lp-caps {
+        background: #F2EAE0;
+        padding: 3.5rem 6rem;
+        border-top: 1px solid #DDD0C4;
+    }
+    .lp-caps-title {
+        font-family: 'Libre Baskerville', serif;
+        font-size: 0.7rem;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+        color: #C8511B;
+        margin-bottom: 2rem;
+    }
+    .lp-caps-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1.5rem 3rem;
+    }
+    .lp-cap {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.8rem;
+    }
+    .lp-cap-dot {
+        width: 5px; height: 5px;
+        border-radius: 50%;
+        background: #C8511B;
+        margin-top: 0.45rem;
+        flex-shrink: 0;
+    }
+    .lp-cap-text {
+        font-size: 0.82rem;
+        color: #4A3728;
+        line-height: 1.55;
+    }
+    .lp-cap-text strong {
+        color: #1C1208;
+        font-weight: 600;
+    }
+
+    /* Footer bar */
+    .lp-footer {
+        background: #1C1208;
+        padding: 1.5rem 6rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .lp-footer-brand {
+        font-family: 'Libre Baskerville', serif;
+        color: #C8511B;
+        font-size: 0.9rem;
+        font-weight: 700;
+    }
+    .lp-footer-copy {
+        font-size: 0.72rem;
+        color: #4A3728;
+        letter-spacing: 0.05em;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # ── Hero ──────────────────────────────────────────────────────────────
+    st.markdown("""
+    <div class="lp-hero">
+        <div class="lp-tag">Pahle India Foundation — Research Tools</div>
+        <div class="lp-wordmark">map<span>gen</span></div>
+        <div class="lp-tagline">District choropleth maps for Indian policy research, in minutes.</div>
+        <div class="lp-divider"></div>
+        <div class="lp-desc">
+            Upload a CSV or Excel file with district-level data. mapgen automatically
+            matches district names, detects the state, crops the boundary file,
+            and renders a publication-ready choropleth map.
+        </div>
+        <div class="lp-features">
+            <div class="lp-feat">
+                <div class="lp-feat-num">820</div>
+                <div class="lp-feat-label">Districts covered</div>
+            </div>
+            <div class="lp-feat">
+                <div class="lp-feat-num">6</div>
+                <div class="lp-feat-label">Export formats</div>
+            </div>
+            <div class="lp-feat">
+                <div class="lp-feat-num">5</div>
+                <div class="lp-feat-label">Matching tiers</div>
+            </div>
+            <div class="lp-feat">
+                <div class="lp-feat-num">0</div>
+                <div class="lp-feat-label">GIS skills needed</div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── CTA button (Streamlit renders this between markdown blocks) ────────
+    _, col_cta, _ = st.columns([2, 2, 2])
+    with col_cta:
+        st.markdown("<div style='background:#1C1208;padding:0 6rem 2rem 6rem;margin-top:-1px;'>",
+                    unsafe_allow_html=True)
+        if st.button("Begin — upload your data", type="primary", use_container_width=True):
+            st.session_state.step = 1
+            st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # ── How it works ───────────────────────────────────────────────────────
+    st.markdown("""
+    <div class="lp-how">
+        <div class="lp-step-card">
+            <div class="lp-step-n">01</div>
+            <div class="lp-step-title">Upload data</div>
+            <div class="lp-step-desc">CSV or Excel with a district name column and one numeric indicator.</div>
+        </div>
+        <div class="lp-step-card">
+            <div class="lp-step-n">02</div>
+            <div class="lp-step-title">Auto-match</div>
+            <div class="lp-step-desc">Five-tier matching engine resolves historical renames, transliterations, and spelling variants.</div>
+        </div>
+        <div class="lp-step-card">
+            <div class="lp-step-n">03</div>
+            <div class="lp-step-title">State crop</div>
+            <div class="lp-step-desc">Detects the state automatically and crops the all-India boundary file to only what you need.</div>
+        </div>
+        <div class="lp-step-card">
+            <div class="lp-step-n">04</div>
+            <div class="lp-step-title">Export</div>
+            <div class="lp-step-desc">Download PNG, SVG, interactive HTML, GeoJSON, or a standalone Python script.</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Capabilities ───────────────────────────────────────────────────────
+    st.markdown("""
+    <div class="lp-caps">
+        <div class="lp-caps-title">Capabilities</div>
+        <div class="lp-caps-grid">
+            <div class="lp-cap"><div class="lp-cap-dot"></div>
+                <div class="lp-cap-text"><strong>Honest maps</strong> — missing districts render as gray hatching, never as zero</div></div>
+            <div class="lp-cap"><div class="lp-cap-dot"></div>
+                <div class="lp-cap-text"><strong>Human-in-the-loop</strong> — low-confidence matches flagged for review before rendering</div></div>
+            <div class="lp-cap"><div class="lp-cap-dot"></div>
+                <div class="lp-cap-text"><strong>Name intelligence</strong> — resolves Allahabad/Prayagraj, Bangalore/Bengaluru, and 200+ aliases</div></div>
+            <div class="lp-cap"><div class="lp-cap-dot"></div>
+                <div class="lp-cap-text"><strong>Classification schemes</strong> — Quantiles, Equal Interval, Fisher-Jenks</div></div>
+            <div class="lp-cap"><div class="lp-cap-dot"></div>
+                <div class="lp-cap-text"><strong>Interactive HTML</strong> — self-contained folium map with hover tooltips</div></div>
+            <div class="lp-cap"><div class="lp-cap-dot"></div>
+                <div class="lp-cap-text"><strong>Reproducible script</strong> — download a standalone Python file that recreates the exact map</div></div>
+        </div>
+    </div>
+    <div class="lp-footer">
+        <div class="lp-footer-brand">mapgen</div>
+        <div class="lp-footer-copy">Pahle India Foundation &nbsp;·&nbsp; Research Tools &nbsp;·&nbsp; 2025</div>
+    </div>
+    """, unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
