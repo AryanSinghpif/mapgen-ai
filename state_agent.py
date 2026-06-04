@@ -88,9 +88,12 @@ class StateAgentResult:
 
 # ── Internal matching helpers ─────────────────────────────────────────────────
 
-def _match_rate(geo_names: list[str], targets: list[str], cutoff: float) -> tuple[int, dict[str, int]]:
+def _match_rate(geo_names: list[str], targets: list[str], cutoff: float,
+                exact_only: bool = False) -> tuple[int, dict[str, int]]:
     """
     Match geo_names against targets using tiers 1-3 (exact, alias, fuzzy).
+    If exact_only=True, skip fuzzy — used for level detection to avoid
+    state names spuriously fuzzy-matching to district names.
     Returns (n_matched, {target: count}).
     """
     norm_targets = {normalize(t): t for t in targets}
@@ -112,8 +115,8 @@ def _match_rate(geo_names: list[str], targets: list[str], cutoff: float) -> tupl
             if aliased and aliased in norm_targets:
                 hit = norm_targets[aliased]
 
-        # Tier 3 — fuzzy
-        if hit is None:
+        # Tier 3 — fuzzy (skipped for level detection)
+        if hit is None and not exact_only:
             best = fuzz_process.extractOne(
                 n, list(norm_targets.keys()),
                 scorer=fuzz.token_sort_ratio,
@@ -135,12 +138,13 @@ def _match_with_state(
     district_col: str,
     state_col: str,
     cutoff: float,
+    exact_only: bool = False,
 ) -> tuple[int, dict[str, int]]:
     """
     Match geo_names against district column, tally STATE_UT for each hit.
+    exact_only=True skips fuzzy — used for level detection.
     Returns (n_matched, {state_name: hit_count}).
     """
-    # Build norm_district → state lookup
     norm_to_state: dict[str, str] = {}
     norm_list: list[str] = []
     for _, row in gdf.iterrows():
@@ -163,7 +167,7 @@ def _match_with_state(
             aliased = _ALIAS_MAP.get(n)
             if aliased and aliased in norm_to_state:
                 hit_state = norm_to_state[aliased]
-        if hit_state is None:
+        if hit_state is None and not exact_only:
             best = fuzz_process.extractOne(
                 n, norm_list,
                 scorer=fuzz.token_sort_ratio,
@@ -203,13 +207,18 @@ def run(
     state_vals    = gdf[state_col].dropna().unique().tolist()    if state_col    in gdf.columns else []
     district_vals = gdf[district_col].dropna().unique().tolist() if district_col in gdf.columns else []
 
-    # ── Step 1: state-level match rate ───────────────────────────────────
-    state_matched, state_hit_counts = _match_rate(geo_names, state_vals, fuzzy_cutoff)
+    # ── Step 1: state-level match rate (exact+alias only — no fuzzy) ─────
+    # exact_only=True prevents state names spuriously fuzzy-matching to
+    # district names (e.g. "Chandigarh" → "CHHATTISGARH" at 73%)
+    state_matched, state_hit_counts = _match_rate(
+        geo_names, state_vals, fuzzy_cutoff, exact_only=True
+    )
     state_rate = state_matched / total
 
-    # ── Step 2: district-level match rate ────────────────────────────────
+    # ── Step 2: district-level match rate (exact+alias only for fairness) ──
     district_matched, district_state_counts = _match_with_state(
-        geo_names, gdf, district_col, state_col, fuzzy_cutoff
+        geo_names, gdf, district_col, state_col, fuzzy_cutoff,
+        exact_only=True,
     )
     district_rate = district_matched / total
 
