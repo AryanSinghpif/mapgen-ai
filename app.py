@@ -63,6 +63,16 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+st.markdown(
+    '<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,'
+    'PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+'
+    'PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiBmaWxsPSIjMEEwQTBBIi8+PHRleHQgeD0iMTYiIHk9'
+    'IjIzIiBmb250LWZhbWlseT0iR2VvcmdpYSxzZXJpZiIgZm9udC1zaXplPSIyMCIgZm9udC13ZWlnaHQ9'
+    'IjMwMCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iI0ZGRkZGRiI+bTwvdGV4dD48cmVjdCB4PSI3'
+    'IiB5PSIyNyIgd2lkdGg9IjE4IiBoZWlnaHQ9IjIiIGZpbGw9IiNENDJCMkIiLz48L3N2Zz4=">',
+    unsafe_allow_html=True
+)
+
 st.markdown("""
 <style>
 /* ── Fonts ── */
