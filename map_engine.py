@@ -283,8 +283,26 @@ def load_data(filepath: str | Path) -> pd.DataFrame:
 
 
 def load_shapefile(path: str | Path) -> gpd.GeoDataFrame:
-    """Load shapefile, GeoJSON, or any Fiona-supported format."""
-    gdf = gpd.read_file(path)
+    """Load shapefile, GeoJSON, or zipped shapefile."""
+    import zipfile, tempfile, os as _os
+    path = Path(path)
+    if path.suffix.lower() == ".zip":
+        # Extract zip to a temp dir and find the .shp inside
+        tmp = tempfile.mkdtemp()
+        with zipfile.ZipFile(path) as zf:
+            zf.extractall(tmp)
+        shp_files = [f for f in Path(tmp).rglob("*.shp")]
+        if not shp_files:
+            # Try GeoJSON inside
+            geojson_files = [f for f in Path(tmp).rglob("*.geojson")]
+            if not geojson_files:
+                raise ValueError("No .shp or .geojson found inside the zip.")
+            read_path = geojson_files[0]
+        else:
+            read_path = shp_files[0]
+        gdf = gpd.read_file(read_path)
+    else:
+        gdf = gpd.read_file(path)
     if gdf.crs is None:
         raise ValueError("Shapefile has no CRS. Set it to EPSG:4326 before using.")
     if gdf.crs.to_epsg() != 4326:
