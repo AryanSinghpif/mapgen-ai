@@ -314,6 +314,7 @@ def _init_state():
         "merged_gdf":         None,
         "fig":            None,
         "folium_map":     None,
+        "user_prompt":    "",
         "title":          "",
         "source":         "",
         "boundary_year":  "",
@@ -423,10 +424,27 @@ if st.session_state.step == 0:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 if st.session_state.step == 1:
-    st.header("Step 1: Upload your data file")
-    st.caption("Accepted formats: CSV (.csv) or Excel (.xlsx)")
+    st.header("What do you want to map?")
 
-    uploaded = st.file_uploader("Data file", type=["csv", "xlsx"])
+    user_prompt = st.text_area(
+        label="Describe your data and goal",
+        placeholder=(
+            "e.g. "I have district-level literacy rates for Rajasthan and want to show "
+            "which districts lag behind the state average."\n\n"
+            "or: "Monthly NREGA wage disbursement across all India districts, 2023-24 — "
+            "highlight the bottom quartile.""
+        ),
+        height=110,
+        value=st.session_state.user_prompt,
+        label_visibility="collapsed",
+    )
+    if user_prompt:
+        st.session_state.user_prompt = user_prompt
+
+    st.divider()
+    st.caption("Upload your data file — CSV or Excel with a district name column and at least one numeric column.")
+
+    uploaded = st.file_uploader("Data file", type=["csv", "xlsx"], label_visibility="collapsed")
 
     if uploaded:
         try:
