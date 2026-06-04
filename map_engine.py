@@ -73,21 +73,6 @@ COLOR_RAMPS = {
     "viridis":   "Perceptually uniform, colourblind-safe.",
 }
 
-# ── India state/UT canonical names (matches STATE_UT column in bundled shp) ──
-
-INDIA_STATES: list[str] = [
-    "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh",
-    "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka",
-    "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram",
-    "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu",
-    "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal",
-    "Andaman and Nicobar Islands", "Chandigarh", "Dadra and Nagar Haveli and Daman and Diu",
-    "Delhi", "Jammu and Kashmir", "Ladakh", "Lakshadweep", "Puducherry",
-]
-
-_STATE_NORM = {normalize(s): s for s in INDIA_STATES}
-
-
 def detect_data_level(names: list[str]) -> str:
     """Return 'state' if majority of names match Indian states, else 'district'."""
     hits = sum(1 for n in names if normalize(n) in _STATE_NORM)
@@ -241,6 +226,21 @@ def _build_alias_map() -> dict[str, str]:
 
 
 _ALIAS_MAP: dict[str, str] = _build_alias_map()
+
+
+# ── India state/UT canonical names (after normalize is defined) ───────────────
+
+INDIA_STATES: list[str] = [
+    "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh",
+    "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka",
+    "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram",
+    "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu",
+    "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal",
+    "Andaman and Nicobar Islands", "Chandigarh", "Dadra and Nagar Haveli and Daman and Diu",
+    "Delhi", "Jammu and Kashmir", "Ladakh", "Lakshadweep", "Puducherry",
+]
+
+_STATE_NORM: dict[str, str] = {normalize(s): s for s in INDIA_STATES}
 
 
 # ── Tiered district matching ──────────────────────────────────────────────────
