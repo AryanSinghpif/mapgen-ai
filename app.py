@@ -371,294 +371,133 @@ with st.sidebar:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 if st.session_state.step == 0:
-    st.markdown("""
-    <style>
-    /* Landing-specific overrides */
-    .main .block-container { padding: 0 !important; max-width: 100% !important; }
-    [data-testid="stSidebar"] { display: none !important; }
-    [data-testid="collapsedControl"] { display: none !important; }
 
-    .lp-hero {
-        background: linear-gradient(158deg, #1C1208 0%, #2E1A0E 55%, #3D2410 100%);
-        padding: 7rem 6rem 5rem 6rem;
-        position: relative;
-        overflow: hidden;
-    }
-    .lp-hero::before {
-        content: "";
-        position: absolute;
-        top: -120px; right: -120px;
-        width: 520px; height: 520px;
-        background: radial-gradient(circle, rgba(200,81,27,0.22) 0%, transparent 70%);
-        border-radius: 50%;
-    }
-    .lp-hero::after {
-        content: "";
-        position: absolute;
-        bottom: -80px; left: 30%;
-        width: 340px; height: 340px;
-        background: radial-gradient(circle, rgba(200,81,27,0.10) 0%, transparent 70%);
-        border-radius: 50%;
-    }
-    .lp-tag {
-        font-size: 0.68rem;
-        letter-spacing: 0.18em;
-        text-transform: uppercase;
-        color: #C8511B;
-        font-weight: 600;
-        margin-bottom: 1.4rem;
-    }
-    .lp-wordmark {
-        font-family: 'Libre Baskerville', serif;
-        font-size: 4.8rem;
-        font-weight: 700;
-        color: #FDFAF6;
-        letter-spacing: -0.04em;
-        line-height: 1;
-        margin-bottom: 0.4rem;
-    }
-    .lp-wordmark span { color: #C8511B; }
-    .lp-tagline {
-        font-family: 'Libre Baskerville', serif;
-        font-size: 1.35rem;
-        color: #A08878;
-        font-style: italic;
-        font-weight: 400;
-        margin-bottom: 2.8rem;
-        line-height: 1.5;
-        max-width: 560px;
-    }
-    .lp-desc {
-        font-size: 0.92rem;
-        color: #8C7060;
-        max-width: 520px;
-        line-height: 1.75;
-        margin-bottom: 3rem;
-    }
-    .lp-features {
-        display: flex;
-        gap: 2.5rem;
-        margin-bottom: 3.5rem;
-        flex-wrap: wrap;
-    }
-    .lp-feat {
-        display: flex;
-        flex-direction: column;
-        gap: 0.3rem;
-    }
-    .lp-feat-num {
-        font-family: 'Libre Baskerville', serif;
-        font-size: 1.6rem;
-        font-weight: 700;
-        color: #C8511B;
-        line-height: 1;
-    }
-    .lp-feat-label {
-        font-size: 0.72rem;
-        color: #8C7060;
-        text-transform: uppercase;
-        letter-spacing: 0.10em;
-    }
-    .lp-divider {
-        width: 40px;
-        height: 1px;
-        background: #C8511B;
-        margin-bottom: 1.5rem;
-        opacity: 0.6;
-    }
+    LANDING_CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300;1,400&family=Inter:wght@300;400&display=swap');
 
-    /* How it works strip */
-    .lp-how {
-        background: #FDFAF6;
-        padding: 4rem 6rem;
-        display: flex;
-        gap: 0;
-    }
-    .lp-step-card {
-        flex: 1;
-        padding: 0 2rem;
-        border-left: 1px solid #E8DDD0;
-        position: relative;
-    }
-    .lp-step-card:first-child { border-left: none; padding-left: 0; }
-    .lp-step-n {
-        font-family: 'Libre Baskerville', serif;
-        font-size: 2.8rem;
-        font-weight: 700;
-        color: #E8DDD0;
-        line-height: 1;
-        margin-bottom: 0.8rem;
-    }
-    .lp-step-title {
-        font-size: 0.82rem;
-        font-weight: 600;
-        color: #1C1208;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        margin-bottom: 0.5rem;
-    }
-    .lp-step-desc {
-        font-size: 0.82rem;
-        color: #8C7060;
-        line-height: 1.65;
-    }
+[data-testid="stSidebar"]        { display: none !important; }
+[data-testid="collapsedControl"] { display: none !important; }
+.main .block-container           { padding: 0 !important; max-width: 100% !important; }
 
-    /* Capabilities strip */
-    .lp-caps {
-        background: #F2EAE0;
-        padding: 3.5rem 6rem;
-        border-top: 1px solid #DDD0C4;
-    }
-    .lp-caps-title {
-        font-family: 'Libre Baskerville', serif;
-        font-size: 0.7rem;
-        letter-spacing: 0.15em;
-        text-transform: uppercase;
-        color: #C8511B;
-        margin-bottom: 2rem;
-    }
-    .lp-caps-grid {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 1.5rem 3rem;
-    }
-    .lp-cap {
-        display: flex;
-        align-items: flex-start;
-        gap: 0.8rem;
-    }
-    .lp-cap-dot {
-        width: 5px; height: 5px;
-        border-radius: 50%;
-        background: #C8511B;
-        margin-top: 0.45rem;
-        flex-shrink: 0;
-    }
-    .lp-cap-text {
-        font-size: 0.82rem;
-        color: #4A3728;
-        line-height: 1.55;
-    }
-    .lp-cap-text strong {
-        color: #1C1208;
-        font-weight: 600;
-    }
+.vg { min-height:100vh; background:#F9F5EF; display:flex; flex-direction:column; font-family:'Inter',sans-serif; }
 
-    /* Footer bar */
-    .lp-footer {
-        background: #1C1208;
-        padding: 1.5rem 6rem;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-    .lp-footer-brand {
-        font-family: 'Libre Baskerville', serif;
-        color: #C8511B;
-        font-size: 0.9rem;
-        font-weight: 700;
-    }
-    .lp-footer-copy {
-        font-size: 0.72rem;
-        color: #4A3728;
-        letter-spacing: 0.05em;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+.vg-bar { display:flex; justify-content:space-between; align-items:center;
+          padding:1.8rem 4rem; border-bottom:1px solid #D4C4B0; }
+.vg-bar span { font-size:0.59rem; letter-spacing:0.22em; text-transform:uppercase; color:#9A8070; }
 
-    # ── Hero ──────────────────────────────────────────────────────────────
-    st.markdown("""
-    <div class="lp-hero">
-        <div class="lp-tag">Pahle India Foundation — Research Tools</div>
-        <div class="lp-wordmark">map<span>gen</span></div>
-        <div class="lp-tagline">District choropleth maps for Indian policy research, in minutes.</div>
-        <div class="lp-divider"></div>
-        <div class="lp-desc">
-            Upload a CSV or Excel file with district-level data. mapgen automatically
-            matches district names, detects the state, crops the boundary file,
-            and renders a publication-ready choropleth map.
-        </div>
-        <div class="lp-features">
-            <div class="lp-feat">
-                <div class="lp-feat-num">820</div>
-                <div class="lp-feat-label">Districts covered</div>
-            </div>
-            <div class="lp-feat">
-                <div class="lp-feat-num">6</div>
-                <div class="lp-feat-label">Export formats</div>
-            </div>
-            <div class="lp-feat">
-                <div class="lp-feat-num">5</div>
-                <div class="lp-feat-label">Matching tiers</div>
-            </div>
-            <div class="lp-feat">
-                <div class="lp-feat-num">0</div>
-                <div class="lp-feat-label">GIS skills needed</div>
-            </div>
-        </div>
+.vg-body { flex:1; display:grid; grid-template-columns:1fr 2.6fr 1fr; }
+
+.vg-left  { border-right:1px solid #D4C4B0; padding:3rem 2.5rem;
+            display:flex; flex-direction:column; justify-content:space-between; }
+.vg-right { border-left:1px solid #D4C4B0;  padding:3rem 2.5rem;
+            display:flex; flex-direction:column; gap:2.2rem; }
+
+.vg-label { font-size:0.57rem; letter-spacing:0.22em; text-transform:uppercase;
+            color:#9A8070; line-height:2.1; }
+
+.vg-stat-n { font-family:'Cormorant Garamond',serif; font-size:3.2rem;
+             font-weight:300; color:#C8511B; line-height:1; letter-spacing:-0.02em; }
+.vg-stat-l { font-size:0.57rem; letter-spacing:0.18em; text-transform:uppercase;
+             color:#9A8070; margin-top:0.3rem; }
+
+.vg-centre { padding:4rem 5.5rem; display:flex; flex-direction:column; justify-content:center; }
+
+.vg-issue { font-size:0.58rem; letter-spacing:0.26em; text-transform:uppercase;
+            color:#C8511B; margin-bottom:2.2rem; }
+
+.vg-title { font-family:'Cormorant Garamond',serif; font-weight:300; color:#1C1208;
+            line-height:0.9; letter-spacing:-0.03em; margin-bottom:0.5rem;
+            font-size:clamp(4.5rem,9vw,8.5rem); }
+.vg-title em { font-style:italic; color:#C8511B; }
+
+.vg-rule { width:100%; height:1px; background:#D4C4B0; margin:2rem 0; }
+
+.vg-sub { font-family:'Cormorant Garamond',serif; font-size:1.3rem; font-style:italic;
+          font-weight:300; color:#6A5040; line-height:1.6; max-width:460px; margin-bottom:3rem; }
+
+.vg-meta { display:flex; gap:3rem; align-items:flex-end; }
+.vg-meta-val { font-family:'Cormorant Garamond',serif; font-size:1.8rem;
+               font-weight:300; color:#1C1208; line-height:1; }
+.vg-meta-key { font-size:0.57rem; letter-spacing:0.18em; text-transform:uppercase; color:#9A8070; }
+
+.vg-rt  { font-size:0.77rem; color:#6A5040; line-height:1.8; }
+.vg-rdv { height:1px; background:#D4C4B0; }
+.vg-rq  { font-family:'Cormorant Garamond',serif; font-size:0.95rem;
+          font-style:italic; color:#9A8070; line-height:1.65; }
+
+.vg-foot { border-top:1px solid #D4C4B0; padding:1.3rem 4rem;
+           display:flex; justify-content:space-between; align-items:center; }
+.vg-foot span { font-size:0.57rem; letter-spacing:0.18em;
+                text-transform:uppercase; color:#B0A090; }
+</style>
+
+<div class="vg">
+  <div class="vg-bar">
+    <span>Pahle India Foundation &nbsp;/&nbsp; Research Tools</span>
+    <span>District Cartography &nbsp;/&nbsp; 2025</span>
+  </div>
+
+  <div class="vg-body">
+
+    <div class="vg-left">
+      <div class="vg-label">Exact match<br>Normalized<br>Alias lookup<br>Fuzzy score<br>LLM resolve</div>
+      <div>
+        <div class="vg-stat-n">820</div>
+        <div class="vg-stat-l">Districts<br>India-wide</div>
+      </div>
     </div>
-    """, unsafe_allow_html=True)
 
-    # ── CTA button (Streamlit renders this between markdown blocks) ────────
-    _, col_cta, _ = st.columns([2, 2, 2])
-    with col_cta:
-        st.markdown("<div style='background:#1C1208;padding:0 6rem 2rem 6rem;margin-top:-1px;'>",
-                    unsafe_allow_html=True)
-        if st.button("Begin — upload your data", type="primary", use_container_width=True):
+    <div class="vg-centre">
+      <div class="vg-issue">Vol. I &nbsp;&mdash;&nbsp; Policy Cartography</div>
+      <div class="vg-title">map<em>gen</em></div>
+      <div class="vg-rule"></div>
+      <div class="vg-sub">District choropleth maps for Indian<br>policy research &mdash; in minutes, not days.</div>
+      <div class="vg-meta">
+        <div><div class="vg-meta-val">6</div><div class="vg-meta-key">Export formats</div></div>
+        <div><div class="vg-meta-val">5</div><div class="vg-meta-key">Matching tiers</div></div>
+        <div><div class="vg-meta-val">0</div><div class="vg-meta-key">GIS skills needed</div></div>
+      </div>
+    </div>
+
+    <div class="vg-right">
+      <div>
+        <div class="vg-label" style="margin-bottom:0.6rem;">What it does</div>
+        <div class="vg-rt">Upload a CSV or Excel file with district-level data.
+        mapgen resolves name variants, detects the state, crops the boundary file,
+        and renders a publication-ready map.</div>
+      </div>
+      <div class="vg-rdv"></div>
+      <div>
+        <div class="vg-label" style="margin-bottom:0.6rem;">Honest by design</div>
+        <div class="vg-rt">Missing districts render as gray hatching &mdash; never as zero.
+        Every map carries a source line and boundary vintage year.</div>
+      </div>
+      <div class="vg-rdv"></div>
+      <div class="vg-rq">&ldquo;A silently mis-assigned district in a published map is the worst failure mode.&rdquo;</div>
+    </div>
+
+  </div>
+
+  <div class="vg-foot">
+    <span>India &nbsp;&mdash;&nbsp; 2024 Boundaries &nbsp;&mdash;&nbsp; 28 States &nbsp;&mdash;&nbsp; 8 UTs</span>
+    <span>CSV &nbsp;&middot;&nbsp; XLSX &nbsp;&middot;&nbsp; PNG &nbsp;&middot;&nbsp; SVG &nbsp;&middot;&nbsp; HTML &nbsp;&middot;&nbsp; GeoJSON</span>
+  </div>
+</div>
+"""
+
+    st.markdown(LANDING_CSS, unsafe_allow_html=True)
+
+    _, col_btn, _ = st.columns([1.3, 1, 1.3])
+    with col_btn:
+        st.markdown(
+            "<div style='margin-top:1.5rem;'>",
+            unsafe_allow_html=True,
+        )
+        if st.button("Enter", type="primary", use_container_width=True):
             st.session_state.step = 1
             st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
-
-    # ── How it works ───────────────────────────────────────────────────────
-    st.markdown("""
-    <div class="lp-how">
-        <div class="lp-step-card">
-            <div class="lp-step-n">01</div>
-            <div class="lp-step-title">Upload data</div>
-            <div class="lp-step-desc">CSV or Excel with a district name column and one numeric indicator.</div>
-        </div>
-        <div class="lp-step-card">
-            <div class="lp-step-n">02</div>
-            <div class="lp-step-title">Auto-match</div>
-            <div class="lp-step-desc">Five-tier matching engine resolves historical renames, transliterations, and spelling variants.</div>
-        </div>
-        <div class="lp-step-card">
-            <div class="lp-step-n">03</div>
-            <div class="lp-step-title">State crop</div>
-            <div class="lp-step-desc">Detects the state automatically and crops the all-India boundary file to only what you need.</div>
-        </div>
-        <div class="lp-step-card">
-            <div class="lp-step-n">04</div>
-            <div class="lp-step-title">Export</div>
-            <div class="lp-step-desc">Download PNG, SVG, interactive HTML, GeoJSON, or a standalone Python script.</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # ── Capabilities ───────────────────────────────────────────────────────
-    st.markdown("""
-    <div class="lp-caps">
-        <div class="lp-caps-title">Capabilities</div>
-        <div class="lp-caps-grid">
-            <div class="lp-cap"><div class="lp-cap-dot"></div>
-                <div class="lp-cap-text"><strong>Honest maps</strong> — missing districts render as gray hatching, never as zero</div></div>
-            <div class="lp-cap"><div class="lp-cap-dot"></div>
-                <div class="lp-cap-text"><strong>Human-in-the-loop</strong> — low-confidence matches flagged for review before rendering</div></div>
-            <div class="lp-cap"><div class="lp-cap-dot"></div>
-                <div class="lp-cap-text"><strong>Name intelligence</strong> — resolves Allahabad/Prayagraj, Bangalore/Bengaluru, and 200+ aliases</div></div>
-            <div class="lp-cap"><div class="lp-cap-dot"></div>
-                <div class="lp-cap-text"><strong>Classification schemes</strong> — Quantiles, Equal Interval, Fisher-Jenks</div></div>
-            <div class="lp-cap"><div class="lp-cap-dot"></div>
-                <div class="lp-cap-text"><strong>Interactive HTML</strong> — self-contained folium map with hover tooltips</div></div>
-            <div class="lp-cap"><div class="lp-cap-dot"></div>
-                <div class="lp-cap-text"><strong>Reproducible script</strong> — download a standalone Python file that recreates the exact map</div></div>
-        </div>
-    </div>
-    <div class="lp-footer">
-        <div class="lp-footer-brand">mapgen</div>
-        <div class="lp-footer-copy">Pahle India Foundation &nbsp;·&nbsp; Research Tools &nbsp;·&nbsp; 2025</div>
-    </div>
-    """, unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
