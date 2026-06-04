@@ -182,27 +182,60 @@ elif st.session_state.step == 2:
         ".shp/.shx/.dbf/.prj). Must cover the same state as your data."
     )
 
+    # ── Bundled all-India shapefile ───────────────────────────────────────
+    BUNDLED_SHP = Path(__file__).parent / "shapefiles" / "india_districts.zip"
+    use_bundled = BUNDLED_SHP.exists()
+
     col_info, col_upload = st.columns([1, 1])
     with col_info:
-        st.info(
-            "**Where to get shapefiles:**\n"
-            "- [Datameet India Maps](https://github.com/datameet/maps) — open, state-level\n"
-            "- [GADM](https://gadm.org) — global, level-2 = districts\n"
-            "- [MapCruzin](https://mapcruzin.com)\n\n"
-            "⚠️ Note the **boundary vintage year** — it determines which districts exist "
-            "in the file. Post-2011 splits won't appear in a 2011-boundary shapefile."
-        )
+        if use_bundled:
+            st.success(
+                "**All-India district shapefile included** (820 districts, 2024 boundaries).\n\n"
+                "Use the bundled file or upload your own below."
+            )
+        else:
+            st.info(
+                "**Where to get shapefiles:**\n"
+                "- [Datameet India Maps](https://github.com/datameet/maps) — open, state-level\n"
+                "- [GADM](https://gadm.org) — global, level-2 = districts\n"
+                "- [MapCruzin](https://mapcruzin.com)\n\n"
+                "⚠️ Note the **boundary vintage year** — it determines which districts exist "
+                "in the file. Post-2011 splits won't appear in a 2011-boundary shapefile."
+            )
 
     with col_upload:
         uploaded_shp = st.file_uploader(
-            "Shapefile or GeoJSON",
+            "Upload your own shapefile or GeoJSON (optional)",
             type=["geojson", "json", "zip"],
         )
         boundary_year = st.text_input(
             "Boundary vintage year",
             placeholder="e.g. 2011 or 2023",
+            value="2024" if use_bundled and not uploaded_shp else "",
             help="The year your shapefile's boundaries represent. Used in the map footnote.",
         )
+
+    # Auto-load bundled shapefile if no upload and not already loaded
+    if not uploaded_shp and use_bundled and st.session_state.gdf is None:
+        try:
+            with st.spinner("Loading bundled all-India district shapefile…"):
+                gdf = load_shapefile(BUNDLED_SHP)
+                _buf = io.BytesIO()
+                gdf.to_file(_buf, driver="GeoJSON")
+                st.session_state.gdf_bytes = _buf.getvalue()
+                gdf = gpd.read_file(io.BytesIO(st.session_state.gdf_bytes))
+                st.session_state.gdf = gdf
+                st.session_state.boundary_year = "2024"
+            st.success(
+                f"Loaded bundled shapefile — **{len(gdf):,} districts** | "
+                f"Columns: {[c for c in gdf.columns if c != 'geometry']}"
+            )
+            st.dataframe(gdf.drop(columns="geometry").head(5), use_container_width=True)
+            if st.button("Continue →", type="primary"):
+                st.session_state.step = 3
+                st.rerun()
+        except Exception as e:
+            st.error(f"Could not load bundled shapefile: {e}")
 
     if uploaded_shp:
         try:

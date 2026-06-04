@@ -1,0 +1,6 @@
+shapefiles/*.shx filter=lfs diff=lfs merge=lfs -text
+shapefiles/*.prj filter=lfs diff=lfs merge=lfs -text
+shapefiles/*.cpg filter=lfs diff=lfs merge=lfs -text
+shapefiles/*.zip filter=lfs diff=lfs merge=lfs -text
+shapefiles/*.shp filter=lfs diff=lfs merge=lfs -text
+shapefiles/*.dbf filter=lfs diff=lfs merge=lfs -text

@@ -3,13 +3,9 @@ __pycache__/
 *.pyo
 .env
 .env.local
-shapefiles/*.shp
-shapefiles/*.shx
-shapefiles/*.dbf
-shapefiles/*.prj
 shapefiles/*.geojson
-shapefiles/*.zip
 !shapefiles/.gitkeep
+!shapefiles/india_districts.zip
 output/
 *.png
 *.jpg
