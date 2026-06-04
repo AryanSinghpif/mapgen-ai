@@ -331,7 +331,16 @@ _init_state()
 
 # ── Sidebar: progress tracker ─────────────────────────────────────────────────
 
+_BUNDLED_SHP_EXISTS = (Path(__file__).parent / "shapefiles" / "india_districts.zip").exists()
+
 STEPS = [
+    "1  Upload data",
+    "3  Select columns",
+    "4  Match districts",
+    "5  Confirm matches",
+    "6  Configure map",
+    "7  Preview & export",
+] if _BUNDLED_SHP_EXISTS else [
     "1  Upload data",
     "2  Upload shapefile",
     "3  Select columns",
@@ -341,16 +350,18 @@ STEPS = [
     "7  Preview & export",
 ]
 
+_STEP_NUMS = [1, 3, 4, 5, 6, 7] if _BUNDLED_SHP_EXISTS else [1, 2, 3, 4, 5, 6, 7]
+
 with st.sidebar:
     st.markdown('<div class="mapgen-wordmark">mapgen</div>', unsafe_allow_html=True)
     st.markdown('<div class="mapgen-sub">Pahle India Foundation</div>', unsafe_allow_html=True)
     st.divider()
 
-    for i, label in enumerate(STEPS, start=1):
+    for num, label in zip(_STEP_NUMS, STEPS):
         cur = st.session_state.step
-        if i < cur:
+        if num < cur:
             st.markdown(f'<p class="step-done">— {label}</p>', unsafe_allow_html=True)
-        elif i == cur:
+        elif num == cur:
             st.markdown(f'<p class="step-active">› {label}</p>', unsafe_allow_html=True)
         else:
             st.markdown(f'<p class="step-todo">  {label}</p>', unsafe_allow_html=True)
@@ -428,8 +439,24 @@ if st.session_state.step == 1:
             st.dataframe(df.head(8), use_container_width=True)
 
             st.session_state.df = df
+
+            # Auto-load bundled shapefile silently; skip step 2 entirely
+            BUNDLED_SHP = Path(__file__).parent / "shapefiles" / "india_districts.zip"
+            if BUNDLED_SHP.exists() and st.session_state.gdf is None:
+                try:
+                    with st.spinner("Loading district boundaries…"):
+                        _gdf = load_shapefile(BUNDLED_SHP)
+                        _buf = io.BytesIO()
+                        _gdf.to_file(_buf, driver="GeoJSON")
+                        st.session_state.gdf_bytes = _buf.getvalue()
+                        st.session_state.gdf = gpd.read_file(io.BytesIO(st.session_state.gdf_bytes))
+                        st.session_state.boundary_year = "2024"
+                except Exception as _e:
+                    st.warning(f"Could not auto-load bundled shapefile: {_e}. Upload one manually in the next step.")
+
+            next_step = 3 if st.session_state.gdf is not None else 2
             if st.button("Continue →", type="primary"):
-                st.session_state.step = 2
+                st.session_state.step = next_step
                 st.rerun()
 
         except Exception as e:
