@@ -857,7 +857,8 @@ elif st.session_state.step == 3:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 elif st.session_state.step == 4:
-    st.header("Step 4: District name matching")
+    _lvl_label = "State" if st.session_state.get("data_level") == "state" else "District"
+    st.header(f"Step 4: {_lvl_label} name matching")
 
     df            = st.session_state.df
     gdf           = st.session_state.active_gdf if st.session_state.active_gdf is not None else st.session_state.gdf
@@ -950,12 +951,13 @@ elif st.session_state.step == 4:
     # ── Summary metrics ───────────────────────────────────────────────────
     total = len(data_names)
     mc1, mc2, mc3 = st.columns(3)
+    _geo_unit = "states" if data_level == "state" else "districts"
     mc1.metric("Auto-matched", f"{len(result.high_confidence)}/{total}",
-               help="Accepted without human review")
+               help=f"Accepted without human review")
     mc2.metric("Needs review", len(result.low_confidence),
-               help="Low-confidence or Groq suggestions requiring confirmation")
+               help=f"Low-confidence suggestions requiring confirmation")
     mc3.metric("Unmatched", len(result.unmatched),
-               help="No candidate found — you can assign manually")
+               help=f"No match found — assign manually or skip")
 
     st.divider()
 
@@ -988,7 +990,8 @@ elif st.session_state.step == 4:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 elif st.session_state.step == 5:
-    st.header("Step 5: Confirm district matches")
+    _lvl5 = "state" if st.session_state.get("data_level") == "state" else "district"
+    st.header(f"Step 5: Confirm {_lvl5} matches")
 
     result        = st.session_state.match_result
     gdf           = st.session_state.active_gdf if st.session_state.active_gdf is not None else st.session_state.gdf

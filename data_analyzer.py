@@ -30,20 +30,31 @@ _GEO_KEYWORDS = [
 ]
 
 _INDIA_STATES_NORM = {
+    # 28 states
     "andhra pradesh", "arunachal pradesh", "assam", "bihar", "chhattisgarh",
     "goa", "gujarat", "haryana", "himachal pradesh", "jharkhand", "karnataka",
     "kerala", "madhya pradesh", "maharashtra", "manipur", "meghalaya",
     "mizoram", "nagaland", "odisha", "punjab", "rajasthan", "sikkim",
     "tamil nadu", "telangana", "tripura", "uttar pradesh", "uttarakhand",
-    "west bengal", "delhi", "jammu and kashmir", "ladakh", "puducherry",
+    "west bengal",
+    # 8 UTs
+    "delhi", "jammu and kashmir", "ladakh", "puducherry",
     "andaman and nicobar islands", "chandigarh", "lakshadweep",
-    # abbrev / alt
-    "up", "mp", "ap", "tn", "wb", "hp", "uk", "j&k", "jk",
+    "dadra and nagar haveli and daman and diu",
+    # common alternate spellings (post-_norm, & already replaced with ' and ')
+    "jammu and kashmir", "jammu kashmir",
+    "andaman and nicobar", "a and n islands",
+    "daman and diu", "dadra and nagar haveli",
+    # abbreviations
+    "up", "mp", "ap", "tn", "wb", "hp", "uk", "j and k", "jk",
+    # total / all india rows (so they don't lower match rate unfairly)
+    "india", "all india", "total",
 }
 
 
 def _norm(s: str) -> str:
     s = unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode()
+    s = re.sub(r"\s*&\s*", " and ", s)          # "J&K" → "j and k", "Jammu & Kashmir" → "jammu and kashmir"
     return re.sub(r"\s+", " ", re.sub(r"[^\w\s]", " ", s)).strip().lower()
 
 
