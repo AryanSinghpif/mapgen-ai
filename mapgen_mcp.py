@@ -356,10 +356,6 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
             png_bytes = fig_to_bytes(fig, "png")
             png_out.write_bytes(png_bytes)
 
-            # Open interactive map in browser
-            import webbrowser
-            webbrowser.open(f"file://{html_out}")
-
             summary = {
                 "status":   "done",
                 "title":    title,
