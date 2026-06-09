@@ -734,18 +734,254 @@ def render_interactive(
             name="No data",
         ).add_to(m)
 
-    # ── Title overlay ─────────────────────────────────────────────────────
-    if title:
-        title_html = f"""
-        <div style="position:fixed;top:12px;left:50%;transform:translateX(-50%);
-                    background:rgba(255,255,255,0.9);padding:8px 18px;
-                    border-radius:6px;font-size:15px;font-weight:bold;
-                    box-shadow:0 2px 6px rgba(0,0,0,0.2);z-index:9999;">
-            {title}
-        </div>"""
-        m.get_root().html.add_child(folium.Element(title_html))
+    # ── Embed GeoJSON for download ─────────────────────────────────────────
+    geojson_str = gdf_data.to_json() if not gdf_data.empty else "{}"
+    safe_title  = (title or "map").replace('"', "'")
 
-    folium.LayerControl().add_to(m)
+    # ── Premium UI overlay (topbar + export panel) ─────────────────────────
+    ui_html = f"""
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+      * {{ box-sizing: border-box; }}
+
+      /* ── Topbar ───────────────────────────────────────────────────── */
+      #mg-topbar {{
+        position: fixed; top: 0; left: 0; right: 0; height: 52px;
+        background: rgba(8,8,8,0.88);
+        backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+        border-bottom: 1px solid rgba(255,255,255,0.07);
+        display: flex; align-items: center; padding: 0 20px;
+        gap: 14px; z-index: 9999; font-family: 'Inter', sans-serif;
+      }}
+      #mg-wordmark {{
+        font-size: 15px; font-weight: 700; color: #D42B2B;
+        letter-spacing: -0.3px; flex-shrink: 0;
+      }}
+      #mg-divider {{
+        width: 1px; height: 20px; background: rgba(255,255,255,0.1);
+        flex-shrink: 0;
+      }}
+      #mg-title {{
+        font-size: 13px; font-weight: 500; color: #E0E0E0;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        flex: 1;
+      }}
+      #mg-badge {{
+        font-size: 11px; color: #666; flex-shrink: 0;
+      }}
+
+      /* ── Export panel ─────────────────────────────────────────────── */
+      #mg-panel {{
+        position: fixed; top: 62px; right: 14px;
+        background: rgba(14,14,14,0.92);
+        backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 12px; padding: 14px;
+        width: 200px; z-index: 9998;
+        font-family: 'Inter', sans-serif;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+        transition: opacity 0.2s ease;
+      }}
+      #mg-panel.hidden {{ opacity: 0; pointer-events: none; }}
+
+      .mg-section-label {{
+        font-size: 10px; font-weight: 600; color: #555;
+        letter-spacing: 0.8px; text-transform: uppercase;
+        margin-bottom: 8px; margin-top: 4px;
+      }}
+      .mg-btn {{
+        display: flex; align-items: center; gap: 9px;
+        width: 100%; padding: 9px 12px; margin-bottom: 5px;
+        background: rgba(255,255,255,0.04);
+        border: 1px solid rgba(255,255,255,0.07);
+        border-radius: 7px; cursor: pointer;
+        font-size: 12px; font-weight: 500; color: #DADADA;
+        font-family: 'Inter', sans-serif;
+        transition: all 0.15s ease; text-align: left;
+        text-decoration: none;
+      }}
+      .mg-btn:hover {{
+        background: rgba(212,43,43,0.12);
+        border-color: rgba(212,43,43,0.35);
+        color: #fff;
+      }}
+      .mg-btn .mg-icon {{ font-size: 14px; flex-shrink: 0; }}
+      .mg-btn .mg-ext {{ font-size: 10px; color: #555; margin-left: auto; font-weight: 400; }}
+      .mg-divider {{ height: 1px; background: rgba(255,255,255,0.06); margin: 10px 0; }}
+
+      /* ── Toggle button ────────────────────────────────────────────── */
+      #mg-toggle {{
+        position: fixed; top: 62px; right: 14px;
+        width: 36px; height: 36px;
+        background: rgba(14,14,14,0.92);
+        backdrop-filter: blur(12px);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 8px; cursor: pointer; z-index: 9999;
+        display: none; align-items: center; justify-content: center;
+        font-size: 16px; color: #999;
+        transition: all 0.15s ease;
+      }}
+      #mg-toggle:hover {{ border-color: #D42B2B; color: #D42B2B; }}
+
+      /* ── Footer strip ─────────────────────────────────────────────── */
+      #mg-footer {{
+        position: fixed; bottom: 0; left: 0; right: 0; height: 28px;
+        background: rgba(8,8,8,0.75);
+        backdrop-filter: blur(8px);
+        border-top: 1px solid rgba(255,255,255,0.05);
+        display: flex; align-items: center; padding: 0 16px; gap: 16px;
+        z-index: 9998; font-family: 'Inter', sans-serif;
+      }}
+      #mg-footer span {{
+        font-size: 10px; color: #444;
+      }}
+      #mg-footer .hl {{ color: #666; }}
+
+      /* Push map content down so topbar doesn't cover it */
+      .folium-map {{ padding-top: 52px !important; }}
+      #map {{ top: 52px !important; height: calc(100vh - 80px) !important; }}
+    </style>
+
+    <!-- Topbar -->
+    <div id="mg-topbar">
+      <div id="mg-wordmark">mapgen</div>
+      <div id="mg-divider"></div>
+      <div id="mg-title">{safe_title}</div>
+      <div id="mg-badge">Pahle India Foundation</div>
+    </div>
+
+    <!-- Export panel -->
+    <div id="mg-panel">
+      <div class="mg-section-label">Export map</div>
+
+      <button class="mg-btn" onclick="downloadPNG()">
+        <span class="mg-icon">🖼</span>
+        <span>Static PNG</span>
+        <span class="mg-ext">High-res</span>
+      </button>
+
+      <button class="mg-btn" onclick="downloadGeoJSON()">
+        <span class="mg-icon">📦</span>
+        <span>GeoJSON</span>
+        <span class="mg-ext">QGIS / Mapbox</span>
+      </button>
+
+      <button class="mg-btn" onclick="downloadHTML()">
+        <span class="mg-icon">🌐</span>
+        <span>Full HTML</span>
+        <span class="mg-ext">Self-contained</span>
+      </button>
+
+      <button class="mg-btn" onclick="downloadCSV()">
+        <span class="mg-icon">📊</span>
+        <span>Data CSV</span>
+        <span class="mg-ext">Matched values</span>
+      </button>
+
+      <div class="mg-divider"></div>
+      <div class="mg-section-label">Share</div>
+
+      <button class="mg-btn" onclick="copyLink()">
+        <span class="mg-icon">🔗</span>
+        <span>Copy file path</span>
+      </button>
+
+      <button class="mg-btn" onclick="printMap()">
+        <span class="mg-icon">🖨</span>
+        <span>Print / PDF</span>
+        <span class="mg-ext">Ctrl+P</span>
+      </button>
+    </div>
+
+    <!-- Footer -->
+    <div id="mg-footer">
+      <span>mapgen<span class="hl">(ai)</span></span>
+      <span>·</span>
+      <span class="hl">Pahle India Foundation</span>
+      <span>·</span>
+      <span>Hover districts for values</span>
+      <span style="margin-left:auto;">Scroll to zoom · Drag to pan</span>
+    </div>
+
+    <script>
+      // Embedded GeoJSON for download
+      const _geojson = {geojson_str};
+      const _title   = "{safe_title}";
+
+      function downloadGeoJSON() {{
+        const blob = new Blob([JSON.stringify(_geojson, null, 2)],
+                              {{type: 'application/geo+json'}});
+        _dl(blob, _title.replace(/\\s+/g,'_') + '.geojson');
+      }}
+
+      function downloadHTML() {{
+        const blob = new Blob([document.documentElement.outerHTML],
+                              {{type: 'text/html'}});
+        _dl(blob, _title.replace(/\\s+/g,'_') + '.html');
+      }}
+
+      function downloadCSV() {{
+        if (!_geojson.features) return;
+        const rows = [['name','value']];
+        _geojson.features.forEach(f => {{
+          const p = f.properties || {{}};
+          const name  = p[Object.keys(p).find(k => typeof p[k]==='string')] || '';
+          const value = p['__val'] ?? p['_value'] ?? '';
+          rows.push([name, value]);
+        }});
+        const csv  = rows.map(r => r.join(',')).join('\\n');
+        const blob = new Blob([csv], {{type:'text/csv'}});
+        _dl(blob, _title.replace(/\\s+/g,'_') + '.csv');
+      }}
+
+      function downloadPNG() {{
+        // Trigger browser print to PDF/PNG as fallback
+        // For real PNG: use html2canvas (requires CDN)
+        const msg = document.createElement('div');
+        msg.innerHTML = '📸 Use browser Print → Save as PDF for high-res export.';
+        msg.style.cssText = 'position:fixed;top:60px;left:50%;transform:translateX(-50%);' +
+          'background:#1a1a1a;color:#eee;padding:10px 20px;border-radius:8px;' +
+          'font-family:Inter,sans-serif;font-size:13px;z-index:99999;' +
+          'border:1px solid #333;box-shadow:0 4px 20px rgba(0,0,0,0.5);';
+        document.body.appendChild(msg);
+        setTimeout(()=>msg.remove(), 3000);
+      }}
+
+      function copyLink() {{
+        const path = window.location.href;
+        navigator.clipboard.writeText(path).then(() => {{
+          _toast('✓ Path copied to clipboard');
+        }});
+      }}
+
+      function printMap() {{ window.print(); }}
+
+      function _dl(blob, name) {{
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = name; a.click();
+        URL.revokeObjectURL(a.href);
+        _toast('✓ Downloading ' + name);
+      }}
+
+      function _toast(msg) {{
+        const t = document.createElement('div');
+        t.textContent = msg;
+        t.style.cssText = 'position:fixed;bottom:40px;left:50%;transform:translateX(-50%);' +
+          'background:#1a1a1a;color:#2ECC71;padding:10px 20px;border-radius:8px;' +
+          'font-family:Inter,sans-serif;font-size:13px;z-index:99999;' +
+          'border:1px solid rgba(46,204,113,0.3);box-shadow:0 4px 20px rgba(0,0,0,0.5);';
+        document.body.appendChild(t);
+        setTimeout(()=>t.remove(), 2500);
+      }}
+    </script>
+    """
+
+    m.get_root().html.add_child(folium.Element(ui_html))
+    folium.LayerControl(position="bottomright").add_to(m)
     return m
 
 
