@@ -23,13 +23,13 @@ Usage (Claude Desktop):
 
 from __future__ import annotations
 
+import base64
 import io
 import json
 import os
 import subprocess
 import sys
 import tempfile
-import webbrowser
 from pathlib import Path
 
 import geopandas as gpd
@@ -56,6 +56,43 @@ from map_engine    import (
 
 # ── Bundled shapefile ─────────────────────────────────────────────────────────
 _BUNDLED_SHP = _HERE / "shapefiles" / "india_districts.zip"
+
+# ── File resolver: path on disk OR inline CSV text ────────────────────────────
+def _resolve_df(arguments: dict) -> tuple[pd.DataFrame, str]:
+    """
+    Return (DataFrame, resolved_file_path).
+    Accepts either:
+      - file_path  — absolute path on local disk
+      - csv_content — raw CSV text pasted inline
+    """
+    if "csv_content" in arguments and arguments["csv_content"]:
+        text = arguments["csv_content"]
+        tmp  = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".csv", delete=False, prefix="mapgen_upload_"
+        )
+        tmp.write(text); tmp.close()
+        return pd.read_csv(tmp.name), tmp.name
+
+    file_path = arguments.get("file_path", "")
+    p = Path(file_path).expanduser()
+    if not p.exists():
+        raise FileNotFoundError(
+            f"File not found: {p}\n"
+            "Tip: provide the full absolute path, e.g. /Users/yourname/Downloads/data.xlsx"
+        )
+    if p.suffix.lower() == ".csv":
+        return pd.read_csv(p), str(p)
+    else:
+        xl = pd.ExcelFile(p, engine="openpyxl")
+        best_df, best_size = None, 0
+        for sheet in xl.sheet_names:
+            try:
+                df = xl.parse(sheet)
+                if df.size > best_size:
+                    best_df, best_size = df, df.size
+            except Exception:
+                continue
+        return best_df, str(p)
 
 
 # ── Server ────────────────────────────────────────────────────────────────────
@@ -90,81 +127,90 @@ def _read_file(file_path: str) -> pd.DataFrame:
 # ── Tool: profile_data ────────────────────────────────────────────────────────
 @server.list_tools()
 async def list_tools() -> list[types.Tool]:
+    _file_schema = {
+        "file_path": {
+            "type": "string",
+            "description": (
+                "Absolute path to the file on the user's Mac, e.g. "
+                "/Users/thesinghaa/Downloads/data.xlsx. "
+                "Ask the user for the full path if not provided. "
+                "Alternatively use csv_content to pass data inline."
+            ),
+        },
+        "csv_content": {
+            "type": "string",
+            "description": (
+                "Raw CSV text of the data (use when the file was uploaded as an "
+                "attachment and no local path is available). Convert the attachment "
+                "to CSV text and pass it here."
+            ),
+        },
+    }
+
     return [
         types.Tool(
             name="profile_data",
             description=(
-                "Load and analyse a CSV or Excel data file. "
-                "Returns: detected format (wide/long), level (state/district), "
-                "geo column, available value columns, and data quality notes. "
-                "Always call this first before any other mapgen tool."
+                "STEP 1 — Load and analyse an India geo-data file (CSV or Excel). "
+                "Returns: geo column, value columns, level (state/district), data quality. "
+                "IMPORTANT: needs either file_path (absolute local path on the Mac) OR "
+                "csv_content (raw CSV text from an attachment). "
+                "If user attaches a file, convert it to CSV text and pass as csv_content. "
+                "If user mentions a filename, ask for the full absolute path."
             ),
             inputSchema={
                 "type": "object",
-                "properties": {
-                    "file_path": {
-                        "type": "string",
-                        "description": "Absolute path to the CSV or Excel file to analyse.",
-                    }
-                },
-                "required": ["file_path"],
+                "properties": _file_schema,
             },
         ),
         types.Tool(
             name="detect_level",
             description=(
-                "Run Agent 2 to authoritatively determine whether data is "
-                "state-level or district-level, and which Indian state(s) are covered. "
-                "Call after profile_data once you know the geo column."
+                "STEP 2 — Detect whether data is state-level or district-level. "
+                "Call after profile_data. Pass the same file_path or csv_content used in step 1."
             ),
             inputSchema={
                 "type": "object",
-                "properties": {
-                    "file_path": {"type": "string", "description": "Path to the data file."},
-                    "geo_col":   {"type": "string", "description": "Name of the geography column."},
-                },
-                "required": ["file_path", "geo_col"],
+                "properties": {**_file_schema, "geo_col": {"type": "string"}},
+                "required": ["geo_col"],
             },
         ),
         types.Tool(
             name="match_names",
             description=(
-                "Match geography names in the data against the India shapefile using "
-                "4-tier matching (exact → alias → fuzzy → fallback). "
-                "Returns match statistics and any unmatched names."
+                "STEP 3 — Match geography names against India shapefile. "
+                "Call after detect_level. Pass the same file_path or csv_content."
             ),
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "file_path": {"type": "string"},
-                    "geo_col":   {"type": "string", "description": "Geography column name."},
-                    "level":     {"type": "string", "enum": ["state", "district"],
-                                  "description": "Data level — from detect_level result."},
+                    **_file_schema,
+                    "geo_col": {"type": "string"},
+                    "level":   {"type": "string", "enum": ["state", "district"]},
                 },
-                "required": ["file_path", "geo_col", "level"],
+                "required": ["geo_col", "level"],
             },
         ),
         types.Tool(
             name="render_map",
             description=(
-                "Render a choropleth map for India. Saves PNG + interactive HTML, "
-                "opens the interactive map in the browser. "
-                "Call after match_names with the column you want to visualise."
+                "STEP 4 — Render choropleth map. Returns PNG shown inline in chat + "
+                "saves interactive HTML to Desktop. "
+                "Call after match_names. Pass the same file_path or csv_content."
             ),
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "file_path":  {"type": "string"},
+                    **_file_schema,
                     "geo_col":    {"type": "string"},
                     "value_col":  {"type": "string", "description": "Numeric column to map."},
                     "level":      {"type": "string", "enum": ["state", "district"]},
-                    "title":      {"type": "string", "description": "Map title (optional)."},
+                    "title":      {"type": "string"},
                     "cmap_name":  {"type": "string", "description": "Matplotlib colormap (default: YlOrRd)."},
-                    "n_classes":  {"type": "integer", "description": "Number of colour classes (default: 5)."},
-                    "output_dir": {"type": "string",
-                                   "description": "Directory to save outputs (default: Desktop)."},
+                    "n_classes":  {"type": "integer"},
+                    "output_dir": {"type": "string"},
                 },
-                "required": ["file_path", "geo_col", "value_col", "level"],
+                "required": ["geo_col", "value_col", "level"],
             },
         ),
     ]
@@ -176,9 +222,8 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
 
     # ── profile_data ──────────────────────────────────────────────────────
     if name == "profile_data":
-        file_path = arguments["file_path"]
         try:
-            raw_df       = _read_file(file_path)
+            raw_df, file_path = _resolve_df(arguments)
             clean_result = clean_dataframe(raw_df)
             df           = clean_result.df
             profile      = profile_data(df)
@@ -211,10 +256,10 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
 
     # ── detect_level ──────────────────────────────────────────────────────
     elif name == "detect_level":
-        file_path = arguments["file_path"]
         geo_col   = arguments["geo_col"]
         try:
-            df        = clean_dataframe(_read_file(file_path)).df
+            raw_df, file_path = _resolve_df(arguments)
+            df        = clean_dataframe(raw_df).df
             gdf       = _load_gdf()
             geo_names = df[geo_col].astype(str).tolist()
 
@@ -239,11 +284,11 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
 
     # ── match_names ───────────────────────────────────────────────────────
     elif name == "match_names":
-        file_path = arguments["file_path"]
         geo_col   = arguments["geo_col"]
         level     = arguments["level"]
         try:
-            df        = clean_dataframe(_read_file(file_path)).df
+            raw_df, file_path = _resolve_df(arguments)
+            df        = clean_dataframe(raw_df).df
             gdf       = _load_gdf()
             geo_names = df[geo_col].astype(str).tolist()
 
@@ -278,9 +323,6 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
 
     # ── render_map ────────────────────────────────────────────────────────
     elif name == "render_map":
-        import base64
-
-        file_path  = arguments["file_path"]
         geo_col    = arguments["geo_col"]
         value_col  = arguments["value_col"]
         level      = arguments["level"]
@@ -297,11 +339,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
 
         try:
             # ── Render inline (synchronous) so PNG can be returned in chat ──
-            p = Path(file_path)
-            if p.suffix.lower() == ".csv":
-                raw_df = pd.read_csv(p)
-            else:
-                raw_df = pd.read_excel(p, engine="openpyxl")
+            raw_df, file_path = _resolve_df(arguments)
 
             from data_analyzer import clean_dataframe
             from map_engine import (
