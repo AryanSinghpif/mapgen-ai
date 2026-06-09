@@ -471,21 +471,41 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
             )
             png_out.write_bytes(fig_to_bytes(fig, "png"))
 
-            # Open both files via macOS open command (non-blocking)
-            import subprocess as _sp
-            _sp.Popen(["open", str(png_out)])
-            _sp.Popen(["open", str(html_out)])
+            # ── Serve output_dir on a local HTTP server ───────────────────
+            import socket, subprocess as _sp
+
+            def _free_port(preferred: int = 7331) -> int:
+                for port in range(preferred, preferred + 20):
+                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                        if s.connect_ex(("localhost", port)) != 0:
+                            return port
+                return preferred
+
+            port = _free_port(7331)
+            # Kill any stale mapgen server on that port then start fresh
+            _sp.Popen(
+                f"lsof -ti tcp:{port} | xargs kill -9 2>/dev/null; "
+                f"python3 -m http.server {port} --directory {str(output_dir)!r} "
+                f"--bind 127.0.0.1",
+                shell=True,
+                stdout=_sp.DEVNULL,
+                stderr=_sp.DEVNULL,
+            )
+            import time; time.sleep(0.8)  # brief wait for server to start
+
+            map_url = f"http://localhost:{port}/{html_out.name}"
+            png_url = f"http://localhost:{port}/{png_out.name}"
 
             matched = len(match_res.high_confidence)
             total   = matched + len(match_res.low_confidence) + len(match_res.unmatched)
 
             summary = (
                 f"✅ Map ready — **{title}**\n\n"
-                f"- 📍 Level: {level} · {matched}/{total} regions matched\n"
-                f"- 🖼 PNG opened: `{png_out.name}`\n"
-                f"- 🌐 Interactive HTML opened: `{html_out.name}`\n"
-                f"- 📂 Both saved to: `{output_dir}`\n\n"
-                f"The HTML has an export panel (GeoJSON / CSV / Print)."
+                f"🌐 **Open interactive map:** {map_url}\n"
+                f"🖼 **Static PNG:** {png_url}\n\n"
+                f"📍 {level.title()}-level · {matched}/{total} regions matched\n"
+                f"📂 Saved to: `{output_dir}`\n\n"
+                f"The map has an export panel — download as GeoJSON, CSV, or Print/PDF."
             )
             return [types.TextContent(type="text", text=summary)]
 
