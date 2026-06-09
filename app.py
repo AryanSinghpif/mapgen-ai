@@ -381,13 +381,20 @@ with st.sidebar:
             st.markdown(f'<p class="step-todo">  {label}</p>', unsafe_allow_html=True)
 
     st.divider()
-    _groq_default = os.environ.get("GROQ_API_KEY", "") or st.secrets.get("GROQ_API_KEY", "")
+    _groq_default   = os.environ.get("GROQ_API_KEY", "") or st.secrets.get("GROQ_API_KEY", "")
+    _gmaps_default  = os.environ.get("GOOGLE_MAPS_KEY", "") or st.secrets.get("GOOGLE_MAPS_KEY", "")
     groq_key = st.text_input(
         "Groq API key (optional)",
         type="password",
         help="Used only for district names that survive all rule-based tiers. "
              "Free tier at console.groq.com. Leave blank to skip.",
         value=_groq_default,
+    )
+    gmaps_key = st.text_input(
+        "Google Maps key (optional)",
+        type="password",
+        help="Enables Google Maps hybrid tiles on the interactive map.",
+        value=_gmaps_default,
     )
 
     st.caption(
@@ -1204,8 +1211,9 @@ elif st.session_state.step == 7:
             ri_params = {k: v for k, v in render_params.items()
                          if k not in ("figsize", "source", "boundary_year")}
             st.session_state.folium_map = render_interactive(
-                gdf       = merged,
-                label_col = shp_name_col,
+                gdf            = merged,
+                label_col      = shp_name_col,
+                google_api_key = gmaps_key or None,
                 **ri_params,
             )
 

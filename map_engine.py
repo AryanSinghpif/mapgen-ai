@@ -604,23 +604,52 @@ def fig_to_bytes(fig: plt.Figure, fmt: str = "png", dpi: int = 200) -> bytes:
 # ── Interactive map rendering (Folium) ────────────────────────────────────────
 
 def render_interactive(
-    gdf:           gpd.GeoDataFrame,
-    value_col:     str  = "_value",
-    label_col:     str  = "district",
-    title:         str  = "",
-    cmap_name:     str  = "Blues",
-    n_classes:     int  = 5,
-    scheme:        str  = "quantiles",
-    icon_label:    str  = "",
+    gdf:             gpd.GeoDataFrame,
+    value_col:       str           = "_value",
+    label_col:       str           = "district",
+    title:           str           = "",
+    cmap_name:       str           = "Blues",
+    n_classes:       int           = 5,
+    scheme:          str           = "quantiles",
+    icon_label:      str           = "",
+    google_api_key:  Optional[str] = None,
 ) -> folium.Map:
     """
     Build a Folium choropleth with hover tooltips and zoom.
+    If google_api_key is provided, uses Google Maps hybrid tiles as base layer.
     Missing-data districts are styled separately (gray, no choropleth class).
     """
     # Compute map center
     bounds = gdf.total_bounds  # [minx, miny, maxx, maxy]
     center = [(bounds[1] + bounds[3]) / 2, (bounds[0] + bounds[2]) / 2]
-    m = folium.Map(location=center, zoom_start=7, tiles="CartoDB positron")
+
+    # ── Base tile layer ───────────────────────────────────────────────────
+    if google_api_key:
+        # Google Maps hybrid (satellite + road labels) — clean base for choropleth
+        m = folium.Map(location=center, zoom_start=5, tiles=None)
+        folium.TileLayer(
+            tiles=(
+                f"https://mt1.google.com/vt/lyrs=y&x={{x}}&y={{y}}&z={{z}}"
+                f"&key={google_api_key}"
+            ),
+            attr="© Google Maps",
+            name="Google Hybrid",
+            overlay=False,
+            control=True,
+        ).add_to(m)
+        # Also add a clean road-only option
+        folium.TileLayer(
+            tiles=(
+                f"https://mt1.google.com/vt/lyrs=m&x={{x}}&y={{y}}&z={{z}}"
+                f"&key={google_api_key}"
+            ),
+            attr="© Google Maps",
+            name="Google Roads",
+            overlay=False,
+            control=True,
+        ).add_to(m)
+    else:
+        m = folium.Map(location=center, zoom_start=5, tiles="CartoDB positron")
 
     # ── Classify values ───────────────────────────────────────────────────
     has_data   = gdf[value_col].notna()
