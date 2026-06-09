@@ -462,37 +462,32 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 gdf=merged, value_col="_value", label_col=label_col,
                 title=title, cmap_name=cmap_name, n_classes=n_classes
             )
-            html_bytes = map_to_html_bytes(fm)
-            html_out.write_bytes(html_bytes)
+            html_out.write_bytes(map_to_html_bytes(fm))
 
-            # Static PNG (shown inline in chat)
-            fig      = render_static(
+            # Static PNG — saved to Desktop
+            fig = render_static(
                 merged, value_col="_value", scheme="quantiles",
                 cmap_name=cmap_name, n_classes=n_classes, title=title
             )
-            png_bytes = fig_to_bytes(fig, "png")
-            png_out.write_bytes(png_bytes)
+            png_out.write_bytes(fig_to_bytes(fig, "png"))
 
-            summary = {
-                "status":   "done",
-                "title":    title,
-                "level":    level,
-                "matched":  len(match_res.high_confidence),
-                "html_map": str(html_out),
-                "png_map":  str(png_out),
-                "exports":  "Open the HTML file for interactive map + GeoJSON/CSV/Print export panel.",
-            }
+            # Open both files via macOS open command (non-blocking)
+            import subprocess as _sp
+            _sp.Popen(["open", str(png_out)])
+            _sp.Popen(["open", str(html_out)])
 
-            return [
-                # PNG shown inline in Claude Desktop chat
-                types.ImageContent(
-                    type="image",
-                    data=base64.b64encode(png_bytes).decode(),
-                    mimeType="image/png",
-                ),
-                # Summary text
-                types.TextContent(type="text", text=json.dumps(summary, indent=2)),
-            ]
+            matched = len(match_res.high_confidence)
+            total   = matched + len(match_res.low_confidence) + len(match_res.unmatched)
+
+            summary = (
+                f"✅ Map ready — **{title}**\n\n"
+                f"- 📍 Level: {level} · {matched}/{total} regions matched\n"
+                f"- 🖼 PNG opened: `{png_out.name}`\n"
+                f"- 🌐 Interactive HTML opened: `{html_out.name}`\n"
+                f"- 📂 Both saved to: `{output_dir}`\n\n"
+                f"The HTML has an export panel (GeoJSON / CSV / Print)."
+            )
+            return [types.TextContent(type="text", text=summary)]
 
         except Exception as exc:
             import traceback
