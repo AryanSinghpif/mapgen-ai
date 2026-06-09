@@ -149,14 +149,27 @@ async def list_tools() -> list[types.Tool]:
 
     return [
         types.Tool(
+            name="start_mapping",
+            description=(
+                "ALWAYS call this first when a user wants to create a map or says things like "
+                "'map this', 'create a map', 'visualise this data', 'choropleth', etc. "
+                "Profiles the data and returns a conversational question set so you can ask "
+                "the user what they want to map — do NOT proceed to render without asking. "
+                "Needs file_path (absolute Mac path) OR csv_content (raw CSV text). "
+                "If the user only provides a filename without a full path, ask: "
+                "'What is the full path to your file? e.g. /Users/yourname/Downloads/file.xlsx'"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": _file_schema,
+            },
+        ),
+        types.Tool(
             name="profile_data",
             description=(
-                "STEP 1 — Load and analyse an India geo-data file (CSV or Excel). "
-                "Returns: geo column, value columns, level (state/district), data quality. "
-                "IMPORTANT: needs either file_path (absolute local path on the Mac) OR "
-                "csv_content (raw CSV text from an attachment). "
-                "If user attaches a file, convert it to CSV text and pass as csv_content. "
-                "If user mentions a filename, ask for the full absolute path."
+                "Low-level profile tool — use start_mapping instead for conversational flows. "
+                "Load and analyse an India geo-data file (CSV or Excel). "
+                "Returns: geo column, value columns, level (state/district), data quality."
             ),
             inputSchema={
                 "type": "object",
@@ -220,8 +233,74 @@ async def list_tools() -> list[types.Tool]:
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
 
+    # ── start_mapping ─────────────────────────────────────────────────────
+    if name == "start_mapping":
+        try:
+            raw_df, file_path = _resolve_df(arguments)
+            clean_result = clean_dataframe(raw_df)
+            df           = clean_result.df
+            prof         = profile_data(df)
+            geo_names    = df[prof.geo_col].astype(str).tolist() if prof.geo_col else []
+
+            # Run level detection
+            level_info = {}
+            if geo_names:
+                try:
+                    gdf    = _load_gdf()
+                    result = agent2_run(geo_names=geo_names, gdf=gdf)
+                    level_info = {
+                        "level":      result.level,
+                        "confidence": f"{result.level_confidence:.0%}",
+                        "coverage":   result.coverage,
+                        "state":      result.state,
+                    }
+                except Exception:
+                    level_info = {"level": prof.level or "unknown"}
+
+            # Build human-readable column list
+            val_cols = prof.value_cols or []
+            col_list = "\n".join(f"  {i+1}. {c}" for i, c in enumerate(val_cols))
+
+            # Emoji suggestions
+            emojis = suggest_emoji(col_name=prof.geo_col or "")
+            emoji_str = "  ".join(f"{e}" for e, _ in emojis[:6]) if emojis else "📊"
+
+            out = {
+                "status":        "ready_to_ask",
+                "file":          Path(file_path).name,
+                "rows":          prof.n_rows,
+                "geo_col":       prof.geo_col,
+                "level":         level_info.get("level", "unknown"),
+                "level_confidence": level_info.get("confidence", ""),
+                "coverage":      level_info.get("coverage", ""),
+                "state":         level_info.get("state"),
+                "value_columns": val_cols,
+                "cleaning_done": clean_result.changes,
+                "issues":        prof.issues,
+
+                # ── Prompt Claude to ask these questions ──────────────────
+                "INSTRUCTIONS_FOR_CLAUDE": (
+                    "Present this to the user conversationally. Say something like:\n\n"
+                    f"'Got it! I've analysed **{Path(file_path).name}** — "
+                    f"it has {prof.n_rows} rows of **{level_info.get('level','?')}-level** "
+                    f"India data ({level_info.get('coverage','')}).\n\n"
+                    f"Here are the columns I can map:\n{col_list}\n\n"
+                    "A few quick questions before I render:\n"
+                    "1. **Which column** do you want to map? (pick a number or name)\n"
+                    "2. **Map title** — what should it say? (or I'll auto-generate one)\n"
+                    "3. **Colour scheme** — warm 🔴 (YlOrRd), cool 🔵 (Blues), green 🟢 (YlGn), or diverging ↔️ (RdYlGn)?\n"
+                    "4. **Number of colour classes** — 4, 5 (default), or 6?\n\n"
+                    f"Suggested emojis for the legend: {emoji_str}'"
+                ),
+            }
+            return [types.TextContent(type="text", text=json.dumps(out, indent=2))]
+
+        except Exception as exc:
+            return [types.TextContent(type="text",
+                    text=json.dumps({"status": "error", "message": str(exc)}))]
+
     # ── profile_data ──────────────────────────────────────────────────────
-    if name == "profile_data":
+    elif name == "profile_data":
         try:
             raw_df, file_path = _resolve_df(arguments)
             clean_result = clean_dataframe(raw_df)
