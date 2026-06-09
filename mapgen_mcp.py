@@ -278,6 +278,8 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
 
     # ── render_map ────────────────────────────────────────────────────────
     elif name == "render_map":
+        import base64
+
         file_path  = arguments["file_path"]
         geo_col    = arguments["geo_col"]
         value_col  = arguments["value_col"]
@@ -293,89 +295,97 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
         html_out = output_dir / f"{stem}_map.html"
         png_out  = output_dir / f"{stem}_map.png"
 
-        # ── Render in background subprocess so MCP returns immediately ────
-        render_script = f"""
-import sys
-sys.path.insert(0, {str(_HERE)!r})
-import json, webbrowser
-from pathlib import Path
-import geopandas as gpd
-from data_analyzer import clean_dataframe
-from state_agent   import run as agent2_run
-from map_engine    import (
-    load_shapefile, match_districts, match_states,
-    join_to_geo, join_state_to_geo,
-    render_static, render_interactive,
-    map_to_html_bytes, fig_to_bytes,
-    detect_district_column,
-)
-import pandas as pd
-
-gdf = load_shapefile({str(_HERE / 'shapefiles' / 'india_districts.zip')!r})
-df  = clean_dataframe(pd.read_csv({file_path!r}) if {file_path!r}.endswith('.csv')
-      else __import__('pandas').read_excel({file_path!r}, engine='openpyxl')).df
-
-if {level!r} == 'state':
-    state_col = 'STATE_UT' if 'STATE_UT' in gdf.columns else gdf.columns[0]
-    match_res = match_states(df[{geo_col!r}].astype(str).tolist(),
-                             gdf[state_col].dropna().unique().tolist())
-    merged = join_state_to_geo(gdf=gdf, data_df=df, data_name_col={geo_col!r},
-                                state_col=state_col, name_map=match_res.as_dict(),
-                                value_col={value_col!r})
-    label_col = state_col
-else:
-    dist_col  = detect_district_column(gdf)
-    match_res = match_districts(df[{geo_col!r}].astype(str).tolist(),
-                                gdf[dist_col].astype(str).tolist())
-    merged = join_to_geo(gdf=gdf, data_df=df, data_name_col={geo_col!r},
-                          shp_name_col=dist_col, name_map=match_res.as_dict(),
-                          value_col={value_col!r})
-    label_col = dist_col
-
-# Interactive HTML (fast)
-fm = render_interactive(gdf=merged, value_col='_value', label_col=label_col,
-                         title={title!r}, cmap_name={cmap_name!r}, n_classes={n_classes})
-Path({str(html_out)!r}).write_bytes(map_to_html_bytes(fm))
-
-# Static PNG
-fig = render_static(merged, value_col='_value', scheme='quantiles',
-                    cmap_name={cmap_name!r}, n_classes={n_classes}, title={title!r})
-Path({str(png_out)!r}).write_bytes(fig_to_bytes(fig, 'png'))
-
-webbrowser.open('file://{html_out}')
-print('done')
-"""
         try:
-            # Write render script to temp file and launch
-            tmp_script = tempfile.NamedTemporaryFile(
-                mode="w", suffix=".py", delete=False, prefix="mapgen_render_"
-            )
-            tmp_script.write(render_script)
-            tmp_script.close()
+            # ── Render inline (synchronous) so PNG can be returned in chat ──
+            p = Path(file_path)
+            if p.suffix.lower() == ".csv":
+                raw_df = pd.read_csv(p)
+            else:
+                raw_df = pd.read_excel(p, engine="openpyxl")
 
-            subprocess.Popen(
-                [sys.executable, tmp_script.name],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+            from data_analyzer import clean_dataframe
+            from map_engine import (
+                load_shapefile, match_districts, match_states,
+                join_to_geo, join_state_to_geo,
+                render_static, render_interactive,
+                map_to_html_bytes, fig_to_bytes,
+                detect_district_column,
             )
 
-            out = {
-                "status":    "rendering",
-                "title":     title,
-                "level":     level,
-                "html_map":  str(html_out),
-                "png_map":   str(png_out),
-                "message":   (
-                    f"Rendering started in background. "
-                    f"Map will open in your browser in ~15-30 seconds. "
-                    f"Files will be saved to: {output_dir}"
-                ),
+            df  = clean_dataframe(raw_df).df
+            gdf = _load_gdf()
+
+            if level == "state":
+                state_col = "STATE_UT" if "STATE_UT" in gdf.columns else gdf.columns[0]
+                match_res = match_states(
+                    df[geo_col].astype(str).tolist(),
+                    gdf[state_col].dropna().unique().tolist()
+                )
+                merged    = join_state_to_geo(
+                    gdf=gdf, data_df=df, data_name_col=geo_col,
+                    state_col=state_col, name_map=match_res.as_dict(),
+                    value_col=value_col
+                )
+                label_col = state_col
+            else:
+                dist_col  = detect_district_column(gdf)
+                match_res = match_districts(
+                    df[geo_col].astype(str).tolist(),
+                    gdf[dist_col].astype(str).tolist()
+                )
+                merged    = join_to_geo(
+                    gdf=gdf, data_df=df, data_name_col=geo_col,
+                    shp_name_col=dist_col, name_map=match_res.as_dict(),
+                    value_col=value_col
+                )
+                label_col = dist_col
+
+            # Interactive HTML
+            fm = render_interactive(
+                gdf=merged, value_col="_value", label_col=label_col,
+                title=title, cmap_name=cmap_name, n_classes=n_classes
+            )
+            html_bytes = map_to_html_bytes(fm)
+            html_out.write_bytes(html_bytes)
+
+            # Static PNG (shown inline in chat)
+            fig      = render_static(
+                merged, value_col="_value", scheme="quantiles",
+                cmap_name=cmap_name, n_classes=n_classes, title=title
+            )
+            png_bytes = fig_to_bytes(fig, "png")
+            png_out.write_bytes(png_bytes)
+
+            # Open interactive map in browser
+            import webbrowser
+            webbrowser.open(f"file://{html_out}")
+
+            summary = {
+                "status":   "done",
+                "title":    title,
+                "level":    level,
+                "matched":  len(match_res.high_confidence),
+                "html_map": str(html_out),
+                "png_map":  str(png_out),
+                "exports":  "Open the HTML file for interactive map + GeoJSON/CSV/Print export panel.",
             }
-            return [types.TextContent(type="text", text=json.dumps(out, indent=2))]
+
+            return [
+                # PNG shown inline in Claude Desktop chat
+                types.ImageContent(
+                    type="image",
+                    data=base64.b64encode(png_bytes).decode(),
+                    mimeType="image/png",
+                ),
+                # Summary text
+                types.TextContent(type="text", text=json.dumps(summary, indent=2)),
+            ]
 
         except Exception as exc:
+            import traceback
             return [types.TextContent(type="text",
-                    text=json.dumps({"status": "error", "message": str(exc)}))]
+                    text=json.dumps({"status": "error", "message": str(exc),
+                                     "trace": traceback.format_exc()[-800:]}))]
 
     return [types.TextContent(type="text",
             text=json.dumps({"status": "error", "message": f"Unknown tool: {name}"}))]

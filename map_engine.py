@@ -840,9 +840,11 @@ def render_interactive(
       }}
       #mg-footer .hl {{ color: #666; }}
 
-      /* Push map content down so topbar doesn't cover it */
-      .folium-map {{ padding-top: 52px !important; }}
-      #map {{ top: 52px !important; height: calc(100vh - 80px) !important; }}
+      /* Push Folium map down so topbar doesn't cover it */
+      .folium-map, [id^="map_"] {{
+        top: 52px !important;
+        height: calc(100vh - 80px) !important;
+      }}
     </style>
 
     <!-- Topbar -->
