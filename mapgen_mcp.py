@@ -412,13 +412,13 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                           Path.home() / "Desktop")).expanduser()
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        stem     = Path(file_path).stem.replace(" ", "_")
-        html_out = output_dir / f"{stem}_map.html"
-        png_out  = output_dir / f"{stem}_map.png"
-
         try:
             # ── Render inline (synchronous) so PNG can be returned in chat ──
             raw_df, file_path = _resolve_df(arguments)
+
+            stem     = Path(file_path).stem.replace(" ", "_")
+            html_out = output_dir / f"{stem}_map.html"
+            png_out  = output_dir / f"{stem}_map.png"
 
             from data_analyzer import clean_dataframe
             from map_engine import (
