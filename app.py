@@ -61,6 +61,7 @@ from data_analyzer import (
     clean_dataframe,
     profile_data,
     pivot_long_to_wide,
+    suggest_emoji,
     DataProfile,
 )
 
@@ -334,6 +335,7 @@ def _init_state():
         "scheme":         "quantiles",
         "cmap_name":      "Blues",
         "n_classes":      5,
+        "map_emoji":      "📊",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -1088,10 +1090,36 @@ elif st.session_state.step == 5:
 elif st.session_state.step == 6:
     st.header("Step 6: Configure your map")
 
+    # ── Auto-suggest emoji from prompt + value col ────────────────────────
+    _suggestions = suggest_emoji(
+        prompt   = st.session_state.get("user_prompt", ""),
+        col_name = st.session_state.get("value_col", ""),
+    )
+    _suggestion_options = [f"{e}  {l}" for e, l in _suggestions]
+    # Add "custom" slot and "none" option
+    _emoji_options = _suggestion_options + ["📊  Data (default)", "✏️  Type my own"]
+
     c_left, c_right = st.columns([1, 1])
 
     with c_left:
         st.subheader("Labels & attribution")
+
+        # Emoji picker
+        st.caption("**Map icon** — auto-detected from your data")
+        _emoji_sel = st.radio(
+            "Pick an icon",
+            options=_emoji_options,
+            index=0,
+            horizontal=True,
+            label_visibility="collapsed",
+        )
+        if _emoji_sel.startswith("✏️"):
+            _custom_emoji = st.text_input("Type emoji", value=st.session_state.map_emoji,
+                                          max_chars=4, label_visibility="collapsed")
+            map_emoji = _custom_emoji.strip() or "📊"
+        else:
+            map_emoji = _emoji_sel.split()[0]   # grab just the emoji character
+
         title = st.text_input(
             "Map title",
             value=st.session_state.title or
@@ -1143,6 +1171,7 @@ elif st.session_state.step == 6:
             st.session_state.scheme        = scheme
             st.session_state.cmap_name     = cmap_name
             st.session_state.n_classes     = n_classes
+            st.session_state.map_emoji     = map_emoji
             st.session_state.step = 7
             st.rerun()
 
@@ -1198,6 +1227,7 @@ elif st.session_state.step == 7:
         title         = st.session_state.title,
         source        = st.session_state.source,
         boundary_year = st.session_state.boundary_year,
+        icon_label    = st.session_state.get("map_emoji", "📊"),
     )
 
     if st.session_state.fig is None:

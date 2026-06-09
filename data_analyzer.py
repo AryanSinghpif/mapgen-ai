@@ -322,6 +322,75 @@ def profile_data(df: pd.DataFrame) -> DataProfile:
     )
 
 
+# ── Emoji suggester ───────────────────────────────────────────────────────────
+
+_EMOJI_MAP: list[tuple[list[str], str, str]] = [
+    # (keywords, emoji, label)
+    (["gdp", "gva", "gross value", "income", "revenue", "economy", "economic",
+      "fiscal", "tax", "expenditure", "budget", "finance", "monetary"],           "💰", "Economy"),
+    (["population", "census", "household", "hh", "hhsize", "residents",
+      "demographic", "density", "persons", "people"],                             "👥", "Population"),
+    (["literacy", "education", "school", "enroll", "dropout", "learning",
+      "teacher", "college", "university", "student"],                             "📚", "Education"),
+    (["health", "hospital", "mortality", "disease", "death", "birth",
+      "medical", "medicine", "clinic", "doctor", "nurse", "mmr", "imr",
+      "malaria", "tb", "hiv", "covid", "nutrition", "malnutrition"],              "🏥", "Health"),
+    (["power", "electricity", "energy", "plant", "solar", "wind",
+      "renewable", "electrification", "kwh", "megawatt", "grid"],                "⚡", "Energy"),
+    (["water", "sanitation", "toilet", "drainage", "sewage", "hygiene",
+      "swachh", "clean water", "drinking", "handwash", "wash"],                  "💧", "Water & Sanitation"),
+    (["road", "transport", "highway", "railway", "rail", "bus", "vehicle",
+      "accident", "traffic", "connectivity", "aviation", "port"],                "🛣️", "Transport"),
+    (["agriculture", "agri", "crop", "farm", "yield", "harvest", "kharif",
+      "rabi", "irrigation", "soil", "fertilizer", "pesticide", "msp"],           "🌾", "Agriculture"),
+    (["forest", "tree", "green", "environment", "ecology", "pollution",
+      "emission", "carbon", "biodiversity", "wildlife", "air quality"],          "🌳", "Environment"),
+    (["crime", "violence", "safety", "police", "fir", "assault", "theft",
+      "murder", "rape", "atrocity", "law", "order"],                             "🔒", "Crime & Safety"),
+    (["poverty", "hunger", "bpl", "below poverty", "deprivation",
+      "multidimensional", "mpi", "destitute"],                                   "📉", "Poverty"),
+    (["employment", "jobs", "labour", "labor", "wage", "salary", "nrega",
+      "mgnrega", "unemployment", "workforce", "worker", "earning"],              "👷", "Employment"),
+    (["gender", "women", "woman", "female", "sex ratio", "girl",
+      "maternal", "mahila", "beti", "widow", "dowry"],                           "♀️", "Gender"),
+    (["child", "infant", "birth", "fertility", "under5", "stunting",
+      "wasting", "anemia", "anganwadi", "icds", "poshan"],                       "👶", "Child & Infant"),
+    (["rank", "index", "score", "rating", "performance", "composite",
+      "indicator", "percentile"],                                                 "🏆", "Index / Rank"),
+    (["housing", "house", "dwelling", "pucca", "kutcha", "homeless",
+      "slum", "shelter", "roof"],                                                 "🏠", "Housing"),
+    (["industry", "manufacturing", "factory", "msme", "industrial",
+      "production", "output", "iip"],                                             "🏭", "Industry"),
+    (["migration", "migrant", "refugee", "displacement", "urban",
+      "urbanisation", "urbanization", "city", "town"],                           "🚶", "Migration / Urban"),
+    (["internet", "digital", "mobile", "telecom", "broadband", "wifi",
+      "tech", "e-governance"],                                                   "📶", "Digital"),
+    (["disaster", "flood", "drought", "cyclone", "earthquake", "relief",
+      "ndrf", "sdrf", "calamity"],                                               "🌊", "Disaster"),
+]
+
+_DEFAULT_EMOJI = "📊"
+
+
+def suggest_emoji(prompt: str = "", col_name: str = "") -> list[tuple[str, str]]:
+    """
+    Match prompt + col_name against keyword categories.
+    Returns list of (emoji, label) tuples, best matches first (up to 3).
+    Falls back to [("📊", "Data")] if nothing matches.
+    """
+    text = _norm(f"{prompt} {col_name}").lower()
+    scores: list[tuple[int, str, str]] = []
+
+    for keywords, emoji, label in _EMOJI_MAP:
+        hits = sum(1 for kw in keywords if kw in text)
+        if hits > 0:
+            scores.append((hits, emoji, label))
+
+    scores.sort(reverse=True)
+    result = [(e, l) for _, e, l in scores[:3]]
+    return result if result else [(_DEFAULT_EMOJI, "Data")]
+
+
 def pivot_long_to_wide(
     df: pd.DataFrame,
     geo_col: str,
