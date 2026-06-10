@@ -23,11 +23,7 @@ Usage (Claude Desktop):
 
 from __future__ import annotations
 
-import base64
-import io
 import json
-import os
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -57,21 +53,49 @@ from map_engine    import (
 # ── Bundled shapefile ─────────────────────────────────────────────────────────
 _BUNDLED_SHP = _HERE / "shapefiles" / "india_districts.zip"
 
+# ── Multi-row header repair ────────────────────────────────────────────────────
+def _fix_multirow_header(p: Path, sheet: str) -> pd.DataFrame:
+    """
+    Re-read sheet with 2-row header, flatten to single names.
+    Row 0 indicator names (with NaN gaps) get forward-filled,
+    row 1 sub-labels (e.g. NFHS 6 / NFHS 5) get appended.
+    """
+    df = pd.read_excel(p, sheet_name=sheet, engine="openpyxl", header=[0, 1])
+    top = pd.Series([c[0] for c in df.columns]).astype(str)
+    top = top.mask(top.str.startswith("Unnamed")).ffill().fillna("")
+    sub = pd.Series([c[1] for c in df.columns]).astype(str)
+    sub = sub.mask(sub.str.startswith("Unnamed")).fillna("")
+    cols = []
+    for t, s in zip(top, sub):
+        t, s = t.strip(), s.strip()
+        cols.append(f"{t} — {s}" if s and s != t else t or s)
+    df.columns = cols
+    return df
+
+
+def _read_sheet(p: Path, sheet: str) -> pd.DataFrame:
+    df = pd.read_excel(p, sheet_name=sheet, engine="openpyxl")
+    n_unnamed = sum(1 for c in df.columns if str(c).startswith("Unnamed"))
+    if n_unnamed > len(df.columns) * 0.3:        # messy multi-row header
+        df = _fix_multirow_header(p, sheet)
+    return df
+
+
 # ── File resolver: path on disk OR inline CSV text ────────────────────────────
-def _resolve_df(arguments: dict) -> tuple[pd.DataFrame, str]:
+def _resolve_df(arguments: dict) -> tuple[pd.DataFrame, str, list[str]]:
     """
-    Return (DataFrame, resolved_file_path).
-    Accepts either:
-      - file_path  — absolute path on local disk
+    Return (DataFrame, resolved_file_path, sheet_names).
+    Accepts:
+      - file_path   — absolute path on local disk
       - csv_content — raw CSV text pasted inline
+      - sheet       — Excel sheet name (optional; default = largest sheet)
     """
-    if "csv_content" in arguments and arguments["csv_content"]:
-        text = arguments["csv_content"]
-        tmp  = tempfile.NamedTemporaryFile(
+    if arguments.get("csv_content"):
+        tmp = tempfile.NamedTemporaryFile(
             mode="w", suffix=".csv", delete=False, prefix="mapgen_upload_"
         )
-        tmp.write(text); tmp.close()
-        return pd.read_csv(tmp.name), tmp.name
+        tmp.write(arguments["csv_content"]); tmp.close()
+        return pd.read_csv(tmp.name), tmp.name, []
 
     file_path = arguments.get("file_path", "")
     p = Path(file_path).expanduser()
@@ -81,47 +105,61 @@ def _resolve_df(arguments: dict) -> tuple[pd.DataFrame, str]:
             "Tip: provide the full absolute path, e.g. /Users/yourname/Downloads/data.xlsx"
         )
     if p.suffix.lower() == ".csv":
-        return pd.read_csv(p), str(p)
-    else:
-        xl = pd.ExcelFile(p, engine="openpyxl")
-        best_df, best_size = None, 0
-        for sheet in xl.sheet_names:
-            try:
-                df = xl.parse(sheet)
-                if df.size > best_size:
-                    best_df, best_size = df, df.size
-            except Exception:
-                continue
-        return best_df, str(p)
+        return pd.read_csv(p), str(p), []
+
+    xl     = pd.ExcelFile(p, engine="openpyxl")
+    sheets = xl.sheet_names
+    want   = arguments.get("sheet")
+    if want and want in sheets:
+        return _read_sheet(p, want), str(p), sheets
+
+    # Default: largest sheet
+    best_df, best_size, best_name = None, 0, sheets[0]
+    for s in sheets:
+        try:
+            df = _read_sheet(p, s)
+            if df.size > best_size:
+                best_df, best_size, best_name = df, df.size, s
+        except Exception:
+            continue
+    return best_df, str(p), sheets
+
+
+def _friendly_col_error(df: pd.DataFrame, col: str) -> str:
+    return (
+        f"Column '{col}' not found. Available columns:\n"
+        + "\n".join(f"  - {c}" for c in df.columns[:30])
+    )
 
 
 # ── Server ────────────────────────────────────────────────────────────────────
 server = Server("mapgen")
 
+_GDF_CACHE: gpd.GeoDataFrame | None = None
 
 def _load_gdf() -> gpd.GeoDataFrame:
-    if not _BUNDLED_SHP.exists():
-        raise FileNotFoundError(f"Bundled shapefile not found at {_BUNDLED_SHP}")
-    return load_shapefile(_BUNDLED_SHP)
+    global _GDF_CACHE
+    if _GDF_CACHE is None:
+        if not _BUNDLED_SHP.exists():
+            raise FileNotFoundError(f"Bundled shapefile not found at {_BUNDLED_SHP}")
+        _GDF_CACHE = load_shapefile(_BUNDLED_SHP)
+    return _GDF_CACHE
 
 
-def _read_file(file_path: str) -> pd.DataFrame:
-    p = Path(file_path).expanduser()
-    if not p.exists():
-        raise FileNotFoundError(f"File not found: {p}")
-    if p.suffix.lower() == ".csv":
-        return pd.read_csv(p)
-    else:
-        xl = pd.ExcelFile(p, engine="openpyxl")
-        best_df, best_size = None, 0
-        for sheet in xl.sheet_names:
-            try:
-                df = xl.parse(sheet)
-                if df.size > best_size:
-                    best_df, best_size = df, df.size
-            except Exception:
-                continue
-        return best_df
+def _serve_dir(directory: Path, preferred: int = 7331) -> int:
+    """Serve directory on localhost. Return port. Reuses existing server."""
+    import socket, subprocess as _sp, time
+    # If our server is already on the preferred port, reuse it
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        if s.connect_ex(("localhost", preferred)) == 0:
+            return preferred
+    _sp.Popen(
+        [sys.executable, "-m", "http.server", str(preferred),
+         "--directory", str(directory), "--bind", "127.0.0.1"],
+        stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
+    )
+    time.sleep(0.6)
+    return preferred
 
 
 # ── Tool: profile_data ────────────────────────────────────────────────────────
@@ -143,6 +181,14 @@ async def list_tools() -> list[types.Tool]:
                 "Raw CSV text of the data (use when the file was uploaded as an "
                 "attachment and no local path is available). Convert the attachment "
                 "to CSV text and pass it here."
+            ),
+        },
+        "sheet": {
+            "type": "string",
+            "description": (
+                "Excel sheet name to use (e.g. 'Total'). If the file has multiple "
+                "sheets, start_mapping lists them — ask the user which one. "
+                "Default: largest sheet."
             ),
         },
     }
@@ -236,7 +282,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
     # ── start_mapping ─────────────────────────────────────────────────────
     if name == "start_mapping":
         try:
-            raw_df, file_path = _resolve_df(arguments)
+            raw_df, file_path, sheets = _resolve_df(arguments)
             clean_result = clean_dataframe(raw_df)
             df           = clean_result.df
             prof         = profile_data(df)
@@ -257,26 +303,43 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                 except Exception:
                     level_info = {"level": prof.level or "unknown"}
 
-            # Build human-readable column list
+            # Column list with value ranges (helps user pick)
             val_cols = prof.value_cols or []
-            col_list = "\n".join(f"  {i+1}. {c}" for i, c in enumerate(val_cols))
+            col_lines = []
+            for i, c in enumerate(val_cols):
+                try:
+                    vals = pd.to_numeric(df[c], errors="coerce").dropna()
+                    rng  = f" (range {vals.min():g}–{vals.max():g})" if len(vals) else " (empty!)"
+                except Exception:
+                    rng = ""
+                col_lines.append(f"  {i+1}. {c}{rng}")
+            col_list = "\n".join(col_lines)
 
-            # Emoji suggestions
-            emojis = suggest_emoji(col_name=prof.geo_col or "")
-            emoji_str = "  ".join(f"{e}" for e, _ in emojis[:6]) if emojis else "📊"
+            # Emoji from value columns, not geo column
+            emojis = suggest_emoji(col_name=" ".join(str(c) for c in val_cols[:5]))
+            emoji_str = "  ".join(e for e, _ in emojis[:6]) if emojis else "📊"
+
+            sheet_q = ""
+            if len(sheets) > 1:
+                sheet_q = (
+                    f"0. **Which sheet?** File has {len(sheets)} sheets: "
+                    f"{', '.join(sheets)} — currently using the largest. "
+                    "(pass sheet='Name' to switch)\n"
+                )
 
             out = {
-                "status":        "ready_to_ask",
-                "file":          Path(file_path).name,
-                "rows":          prof.n_rows,
-                "geo_col":       prof.geo_col,
-                "level":         level_info.get("level", "unknown"),
+                "status":           "ready_to_ask",
+                "file":             Path(file_path).name,
+                "sheets":           sheets,
+                "rows":             prof.n_rows,
+                "geo_col":          prof.geo_col,
+                "level":            level_info.get("level", "unknown"),
                 "level_confidence": level_info.get("confidence", ""),
-                "coverage":      level_info.get("coverage", ""),
-                "state":         level_info.get("state"),
-                "value_columns": val_cols,
-                "cleaning_done": clean_result.changes,
-                "issues":        prof.issues,
+                "coverage":         level_info.get("coverage", ""),
+                "state":            level_info.get("state"),
+                "value_columns":    val_cols,
+                "cleaning_done":    clean_result.changes,
+                "issues":           prof.issues,
 
                 # ── Prompt Claude to ask these questions ──────────────────
                 "INSTRUCTIONS_FOR_CLAUDE": (
@@ -286,11 +349,14 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
                     f"India data ({level_info.get('coverage','')}).\n\n"
                     f"Here are the columns I can map:\n{col_list}\n\n"
                     "A few quick questions before I render:\n"
+                    f"{sheet_q}"
                     "1. **Which column** do you want to map? (pick a number or name)\n"
                     "2. **Map title** — what should it say? (or I'll auto-generate one)\n"
                     "3. **Colour scheme** — warm 🔴 (YlOrRd), cool 🔵 (Blues), green 🟢 (YlGn), or diverging ↔️ (RdYlGn)?\n"
                     "4. **Number of colour classes** — 4, 5 (default), or 6?\n\n"
-                    f"Suggested emojis for the legend: {emoji_str}'"
+                    f"Suggested emojis for the legend: {emoji_str}'\n\n"
+                    "Skip questions the user already answered in their prompt. "
+                    "Columns marked (empty!) have no data — warn the user if they pick one."
                 ),
             }
             return [types.TextContent(type="text", text=json.dumps(out, indent=2))]
@@ -302,7 +368,7 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
     # ── profile_data ──────────────────────────────────────────────────────
     elif name == "profile_data":
         try:
-            raw_df, file_path = _resolve_df(arguments)
+            raw_df, file_path, _sheets = _resolve_df(arguments)
             clean_result = clean_dataframe(raw_df)
             df           = clean_result.df
             profile      = profile_data(df)
@@ -337,8 +403,11 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
     elif name == "detect_level":
         geo_col   = arguments["geo_col"]
         try:
-            raw_df, file_path = _resolve_df(arguments)
+            raw_df, file_path, _sheets = _resolve_df(arguments)
             df        = clean_dataframe(raw_df).df
+            if geo_col not in df.columns:
+                return [types.TextContent(type="text", text=json.dumps(
+                    {"status": "error", "message": _friendly_col_error(df, geo_col)}))]
             gdf       = _load_gdf()
             geo_names = df[geo_col].astype(str).tolist()
 
@@ -366,8 +435,11 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
         geo_col   = arguments["geo_col"]
         level     = arguments["level"]
         try:
-            raw_df, file_path = _resolve_df(arguments)
+            raw_df, file_path, _sheets = _resolve_df(arguments)
             df        = clean_dataframe(raw_df).df
+            if geo_col not in df.columns:
+                return [types.TextContent(type="text", text=json.dumps(
+                    {"status": "error", "message": _friendly_col_error(df, geo_col)}))]
             gdf       = _load_gdf()
             geo_names = df[geo_col].astype(str).tolist()
 
@@ -413,23 +485,23 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
         output_dir.mkdir(parents=True, exist_ok=True)
 
         try:
-            # ── Render inline (synchronous) so PNG can be returned in chat ──
-            raw_df, file_path = _resolve_df(arguments)
+            # ── Render inline (synchronous) ─────────────────────────────────
+            raw_df, file_path, _sheets = _resolve_df(arguments)
 
             stem     = Path(file_path).stem.replace(" ", "_")
             html_out = output_dir / f"{stem}_map.html"
             png_out  = output_dir / f"{stem}_map.png"
 
-            from data_analyzer import clean_dataframe
-            from map_engine import (
-                load_shapefile, match_districts, match_states,
-                join_to_geo, join_state_to_geo,
-                render_static, render_interactive,
-                map_to_html_bytes, fig_to_bytes,
-                detect_district_column,
-            )
-
             df  = clean_dataframe(raw_df).df
+            for col in (geo_col, value_col):
+                if col not in df.columns:
+                    return [types.TextContent(type="text", text=json.dumps(
+                        {"status": "error", "message": _friendly_col_error(df, col)}))]
+            if pd.to_numeric(df[value_col], errors="coerce").notna().sum() == 0:
+                return [types.TextContent(type="text", text=json.dumps(
+                    {"status": "error",
+                     "message": f"Column '{value_col}' has no numeric data — "
+                                "pick a different column."}))]
             gdf = _load_gdf()
 
             if level == "state":
@@ -471,40 +543,22 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
             )
             png_out.write_bytes(fig_to_bytes(fig, "png"))
 
-            # ── Serve output_dir on a local HTTP server ───────────────────
-            import socket, subprocess as _sp
-
-            def _free_port(preferred: int = 7331) -> int:
-                for port in range(preferred, preferred + 20):
-                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                        if s.connect_ex(("localhost", port)) != 0:
-                            return port
-                return preferred
-
-            port = _free_port(7331)
-            # Kill any stale mapgen server on that port then start fresh
-            _sp.Popen(
-                f"lsof -ti tcp:{port} | xargs kill -9 2>/dev/null; "
-                f"python3 -m http.server {port} --directory {str(output_dir)!r} "
-                f"--bind 127.0.0.1",
-                shell=True,
-                stdout=_sp.DEVNULL,
-                stderr=_sp.DEVNULL,
-            )
-            import time; time.sleep(0.8)  # brief wait for server to start
-
+            # ── Serve output_dir on localhost ──────────────────────────────
+            port    = _serve_dir(output_dir)
             map_url = f"http://localhost:{port}/{html_out.name}"
             png_url = f"http://localhost:{port}/{png_out.name}"
 
-            matched = len(match_res.high_confidence)
-            total   = matched + len(match_res.low_confidence) + len(match_res.unmatched)
+            matched   = len(match_res.high_confidence)
+            total     = matched + len(match_res.low_confidence) + len(match_res.unmatched)
+            unmatched = match_res.unmatched[:5]
 
             summary = (
                 f"✅ Map ready — **{title}**\n\n"
                 f"🌐 **Open interactive map:** {map_url}\n"
                 f"🖼 **Static PNG:** {png_url}\n\n"
                 f"📍 {level.title()}-level · {matched}/{total} regions matched\n"
-                f"📂 Saved to: `{output_dir}`\n\n"
+                + (f"⚠️ Unmatched: {', '.join(unmatched)}\n" if unmatched else "")
+                + f"📂 Saved to: `{output_dir}`\n\n"
                 f"The map has an export panel — download as GeoJSON, CSV, or Print/PDF."
             )
             return [types.TextContent(type="text", text=summary)]

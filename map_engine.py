@@ -79,6 +79,25 @@ def detect_data_level(names: list[str]) -> str:
     return "state" if hits / max(len(names), 1) >= 0.50 else "district"
 
 
+# Common alternate state/UT names → shapefile-normalized form
+_STATE_ALIASES = {
+    "nct of delhi":              "delhi",
+    "delhi nct":                 "delhi",
+    "national capital territory of delhi": "delhi",
+    "pondicherry":               "puducherry",
+    "orissa":                    "odisha",
+    "uttaranchal":               "uttarakhand",
+    "telengana":                 "telangana",
+    "jammu kashmir":             "jammu and kashmir",
+    "j and k":                   "jammu and kashmir",
+    "a and n islands":           "andaman and nicobar islands",
+    "andaman nicobar":           "andaman and nicobar islands",
+    "dadra and nagar haveli":    "dadra and nagar haveli and daman and diu",
+    "daman and diu":             "dadra and nagar haveli and daman and diu",
+    "dnh and dd":                "dadra and nagar haveli and daman and diu",
+}
+
+
 def match_states(
     data_names: list[str],
     shp_state_values: list[str],
@@ -105,7 +124,13 @@ def match_states(
             result.high_confidence.append(DistrictMatch(name, shp_norm[n], "normalized", 0.97))
             continue
 
-        # Tier 3 — alias
+        # Tier 3 — state alias (NCT of Delhi, Orissa, Pondicherry, …)
+        if n in _STATE_ALIASES and _STATE_ALIASES[n] in shp_norm:
+            result.high_confidence.append(
+                DistrictMatch(name, shp_norm[_STATE_ALIASES[n]], "alias", 0.95))
+            continue
+
+        # Tier 3b — district alias map (legacy)
         if n in _ALIAS_MAP and _ALIAS_MAP[n] in shp_norm:
             result.high_confidence.append(DistrictMatch(name, shp_norm[_ALIAS_MAP[n]], "alias", 0.95))
             continue
